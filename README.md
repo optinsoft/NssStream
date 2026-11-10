@@ -211,8 +211,8 @@ directory `nspr`, so check both out side by side in the repository root
 `make`):
 
 ```bat
-git clone https://github.com/nss-dev/nss.git nss
-git clone https://github.com/servo/nspr.git nspr
+git clone https://github.com/mozilla/nss.git nss
+git clone https://github.com/mozilla/nspr.git nspr
 ```
 
 **2. Install a real GNU make.** MozillaBuild does not ship `make.exe`, and
@@ -250,6 +250,7 @@ which link  # must point at .../Hostx64/x64/link
 **3. Build NSS/NSPR** in the MozillaBuild shell (`start-shell.bat`):
 
 ```bash
+cd nss
 ./build.sh --opt --disable-tests
 ```
 
