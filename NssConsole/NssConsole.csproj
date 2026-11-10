@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NssStream\NssStream.csproj" />
+  </ItemGroup>
+
+  <Target Name="EnsureNativeLibrary" BeforeTargets="Build"
+          Condition="!Exists('../Native/build/proxymap_nss.dll') AND !Exists('../Native/build/Release/proxymap_nss.dll') AND !Exists('../Native/build/libproxymap_nss.so')">
+    <Warning Text="Native library not found in ../Native/build. Run Native/build.ps1 (Windows) or Native/build.sh (Linux) first." />
+  </Target>
+
+</Project>

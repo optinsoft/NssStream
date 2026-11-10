@@ -1,0 +1,115 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <!-- NuGet package metadata -->
+    <PackageId>NssStream</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Vitaly Yakovlev (optinsoft)</Authors>
+    <Owners>optinsoft</Owners>
+    <Copyright>Copyright © Vitaly Yakovlev, vitaly@optinsoft.net</Copyright>
+    <Description>.NET TLS stream backed by Mozilla NSS — the TLS library used by Firefox — with native HTTP/2 support.</Description>
+    <PackageTags>tls;ssl;nss;firefox;http2</PackageTags>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/optinsoft/NssStream.git</RepositoryUrl>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Native library: .dll for Windows, .so for Linux.
+         For local builds it is copied flat to the output directory (DllImport
+         probes there; CopyToOutputDirectory items flow transitively through
+         ProjectReference). When packed, NuGet places it under
+         runtimes/{RID}/native/ so consumers get the right binary automatically. -->
+    <None Include="../Native/build/proxymap_nss.dll"
+          Link="proxymap_nss.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          Pack="true"
+          PackagePath="runtimes/win-x64/native"
+          Condition="Exists('../Native/build/proxymap_nss.dll')" />
+    <None Include="../Native/build/Release/proxymap_nss.dll"
+          Link="proxymap_nss.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          Pack="true"
+          PackagePath="runtimes/win-x64/native"
+          Condition="!Exists('../Native/build/proxymap_nss.dll') AND Exists('../Native/build/Release/proxymap_nss.dll')" />
+
+    <!-- NSS/NSPR runtime DLLs for local Windows builds: copied to the
+         output directory of every project that references NssStream, but
+         not packed (on Linux they are system libraries; on Windows the
+         consumer provides their own NSS/NSPR build). -->
+    <None Include="../dist/Release/lib/nspr4.dll"
+          Link="nspr4.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Condition="Exists('../dist/Release/lib/nspr4.dll')" />
+    <None Include="../dist/Release/lib/nss3.dll"
+          Link="nss3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Condition="Exists('../dist/Release/lib/nss3.dll')" />
+    <None Include="../dist/Release/lib/ssl3.dll"
+          Link="ssl3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Condition="Exists('../dist/Release/lib/ssl3.dll')" />
+    <None Include="../dist/Release/lib/nssutil3.dll"
+          Link="nssutil3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Condition="Exists('../dist/Release/lib/nssutil3.dll')" />
+    <None Include="../dist/Release/lib/plc4.dll"
+          Link="plc4.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Condition="Exists('../dist/Release/lib/plc4.dll')" />
+    <None Include="../dist/Release/lib/plds4.dll"
+          Link="plds4.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Condition="Exists('../dist/Release/lib/plds4.dll')" />
+    <None Include="../dist/Release/lib/softokn3.dll"
+          Link="softokn3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Condition="Exists('../dist/Release/lib/softokn3.dll')" />
+    <None Include="../dist/Release/lib/freebl3.dll"
+          Link="freebl3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Condition="Exists('../dist/Release/lib/freebl3.dll')" />
+
+    <None Include="../dist/Debug/lib/nspr4.dll"
+          Link="nspr4.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Condition="!Exists('../dist/Release/lib/nspr4.dll') AND Exists('../dist/Debug/lib/nspr4.dll')" />
+    <None Include="../dist/Debug/lib/nss3.dll"
+          Link="nss3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Condition="!Exists('../dist/Release/lib/nss3.dll') AND Exists('../dist/Debug/lib/nss3.dll')" />
+    <None Include="../dist/Debug/lib/ssl3.dll"
+          Link="ssl3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Condition="!Exists('../dist/Release/lib/ssl3.dll') AND Exists('../dist/Debug/lib/ssl3.dll')" />
+    <None Include="../dist/Debug/lib/nssutil3.dll"
+          Link="nssutil3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Condition="!Exists('../dist/Release/lib/nssutil3.dll') AND Exists('../dist/Debug/lib/nssutil3.dll')" />
+    <None Include="../dist/Debug/lib/plc4.dll"
+          Link="plc4.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Condition="!Exists('../dist/Release/lib/plc4.dll') AND Exists('../dist/Debug/lib/plc4.dll')" />
+    <None Include="../dist/Debug/lib/plds4.dll"
+          Link="plds4.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Condition="!Exists('../dist/Release/lib/plds4.dll') AND Exists('../dist/Debug/lib/plds4.dll')" />
+    <None Include="../dist/Debug/lib/softokn3.dll"
+          Link="softokn3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Condition="!Exists('../dist/Release/lib/softokn3.dll') AND Exists('../dist/Debug/lib/softokn3.dll')" />
+    <None Include="../dist/Debug/lib/freebl3.dll"
+          Link="freebl3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Condition="!Exists('../dist/Release/lib/freebl3.dll') AND Exists('../dist/Debug/lib/freebl3.dll')" />
+    <None Include="../Native/build/libproxymap_nss.so"
+          Link="libproxymap_nss.so"
+          CopyToOutputDirectory="PreserveNewest"
+          Pack="true"
+          PackagePath="runtimes/linux-x64/native"
+          Condition="Exists('../Native/build/libproxymap_nss.so')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../LICENSE" Pack="true" PackagePath="/" />
+    <None Include="../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <Target Name="EnsureNativeLibrary" BeforeTargets="Build"
+          Condition="!Exists('../Native/build/proxymap_nss.dll') AND !Exists('../Native/build/Release/proxymap_nss.dll') AND !Exists('../Native/build/libproxymap_nss.so')">
+    <Warning Text="Native library not found in ../Native/build. Run Native/build.ps1 (Windows) or Native/build.sh (Linux) first." />
+  </Target>
+
+</Project>
