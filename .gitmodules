@@ -1,6 +1,6 @@
 [submodule "nss"]
 	path = nss
-	url = https://github.com/nss-dev/nss.git
+	url = https://github.com/mozilla/nss.git
 [submodule "nspr"]
 	path = nspr
-	url = https://github.com/servo/nspr.git
+	url = https://github.com/mozilla/nspr.git
