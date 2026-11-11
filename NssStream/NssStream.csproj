@@ -41,64 +41,67 @@
           PackagePath="runtimes/win-x64/native"
           Condition="!Exists('../Native/build/proxymap_nss.dll') AND Exists('../Native/build/Release/proxymap_nss.dll')" />
 
-    <!-- NSS/NSPR runtime DLLs for local Windows builds: copied to the
-         output directory of every project that references NssStream, but
-         not packed (on Linux they are system libraries; on Windows the
-         consumer provides their own NSS/NSPR build). -->
+    <!-- NSS/NSPR runtime DLLs for Windows builds: copied flat to the output
+         directory of every project that references NssStream for local
+         builds, and packed under runtimes/win-x64/native so NuGet consumers
+         get the complete set automatically (on Linux these are system
+         libraries and are not shipped). The NSS gyp build produces all of
+         them, including sqlite3.dll (built as a shared library from
+         lib/sqlite/sqlite.gyp). -->
     <None Include="../dist/Release/lib/nspr4.dll"
-          Link="nspr4.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Link="nspr4.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
           Condition="Exists('../dist/Release/lib/nspr4.dll')" />
     <None Include="../dist/Release/lib/nss3.dll"
-          Link="nss3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Link="nss3.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
           Condition="Exists('../dist/Release/lib/nss3.dll')" />
     <None Include="../dist/Release/lib/ssl3.dll"
-          Link="ssl3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Link="ssl3.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
           Condition="Exists('../dist/Release/lib/ssl3.dll')" />
     <None Include="../dist/Release/lib/nssutil3.dll"
-          Link="nssutil3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Link="nssutil3.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
           Condition="Exists('../dist/Release/lib/nssutil3.dll')" />
     <None Include="../dist/Release/lib/plc4.dll"
-          Link="plc4.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Link="plc4.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
           Condition="Exists('../dist/Release/lib/plc4.dll')" />
     <None Include="../dist/Release/lib/plds4.dll"
-          Link="plds4.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Link="plds4.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
           Condition="Exists('../dist/Release/lib/plds4.dll')" />
     <None Include="../dist/Release/lib/softokn3.dll"
-          Link="softokn3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Link="softokn3.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
           Condition="Exists('../dist/Release/lib/softokn3.dll')" />
     <None Include="../dist/Release/lib/freebl3.dll"
-          Link="freebl3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Link="freebl3.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
           Condition="Exists('../dist/Release/lib/freebl3.dll')" />
 	<None Include="../dist/Release/lib/sqlite3.dll"
-		  Link="sqlite3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+		  Link="sqlite3.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
 		  Condition="Exists('../dist/Release/lib/sqlite3.dll')" />
 
     <None Include="../dist/Debug/lib/nspr4.dll"
-          Link="nspr4.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Link="nspr4.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
           Condition="!Exists('../dist/Release/lib/nspr4.dll') AND Exists('../dist/Debug/lib/nspr4.dll')" />
     <None Include="../dist/Debug/lib/nss3.dll"
-          Link="nss3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Link="nss3.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
           Condition="!Exists('../dist/Release/lib/nss3.dll') AND Exists('../dist/Debug/lib/nss3.dll')" />
     <None Include="../dist/Debug/lib/ssl3.dll"
-          Link="ssl3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Link="ssl3.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
           Condition="!Exists('../dist/Release/lib/ssl3.dll') AND Exists('../dist/Debug/lib/ssl3.dll')" />
     <None Include="../dist/Debug/lib/nssutil3.dll"
-          Link="nssutil3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Link="nssutil3.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
           Condition="!Exists('../dist/Release/lib/nssutil3.dll') AND Exists('../dist/Debug/lib/nssutil3.dll')" />
     <None Include="../dist/Debug/lib/plc4.dll"
-          Link="plc4.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Link="plc4.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
           Condition="!Exists('../dist/Release/lib/plc4.dll') AND Exists('../dist/Debug/lib/plc4.dll')" />
     <None Include="../dist/Debug/lib/plds4.dll"
-          Link="plds4.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Link="plds4.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
           Condition="!Exists('../dist/Release/lib/plds4.dll') AND Exists('../dist/Debug/lib/plds4.dll')" />
     <None Include="../dist/Debug/lib/softokn3.dll"
-          Link="softokn3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Link="softokn3.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
           Condition="!Exists('../dist/Release/lib/softokn3.dll') AND Exists('../dist/Debug/lib/softokn3.dll')" />
     <None Include="../dist/Debug/lib/freebl3.dll"
-          Link="freebl3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Link="freebl3.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
           Condition="!Exists('../dist/Release/lib/freebl3.dll') AND Exists('../dist/Debug/lib/freebl3.dll')" />
     <None Include="../dist/Debug/lib/sqlite3.dll"
-          Link="sqlite3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Link="sqlite3.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
           Condition="!Exists('../dist/Release/lib/sqlite3.dll') AND Exists('../dist/Debug/lib/sqlite3.dll')" />
     <None Include="../Native/build/libproxymap_nss.so"
           Link="libproxymap_nss.so"

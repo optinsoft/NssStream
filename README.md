@@ -279,15 +279,14 @@ The result lands in `..\dist\Release` (with `--opt`; without it — `..\dist\Deb
   `freebl3.dll` must be present (the latter two are also picked up
   automatically by `NssStream.csproj`).
 
-  **Important:** the NSS build does **not** produce `sqlite3.dll`, but
-  softoken dynamically loads it during `NSS_NoDB_Init` anyway. Place a
-  64-bit `sqlite3.dll` (e.g. from the "Precompiled Windows x64 DLL" archive
-  on [sqlite.org](https://www.sqlite.org/download.html)) into
-  `..\dist\Release\lib` (or `..\dist\Debug\lib`) — `NssStream.csproj`
-  copies it to the output directory when present. Without it,
-  `NSS_NoDB_Init` fails with `PR_LOAD_LIBRARY_ERROR (-5977)`, typically
-  wrapping Win32 error 193 (ERROR_BAD_EXE_FORMAT) when a wrong-bitness
-  `sqlite3.dll` is found on PATH instead.
+  `sqlite3.dll` — built by the gyp build as a shared library
+  (`lib/sqlite/sqlite.gyp`); make sure it is present in `dist\Release\lib`
+  together with the rest. softoken loads it dynamically during
+  `NSS_NoDB_Init` even in NoDB mode, and `NssStream.csproj` copies/packs it
+  together with the other DLLs. Without it, `NSS_NoDB_Init` fails with
+  `PR_LOAD_LIBRARY_ERROR (-5977)`, typically wrapping Win32 error 193
+  (ERROR_BAD_EXE_FORMAT) when a wrong-bitness `sqlite3.dll` is found on
+  PATH instead — e.g. one from PHP, MSYS2 or MinGW directories.
 
 **4. Build the wrapper** — open a *Developer PowerShell for VS 2022 (x64)*:
 
@@ -306,8 +305,9 @@ up `nspr4.dll`, `nss3.dll`, `ssl3.dll`, `nssutil3.dll`, `plc4.dll`,
 `plds4.dll`, `softokn3.dll` and `freebl3.dll` from
 `..\dist\{Release,Debug}\lib` and copies them to the
 output directory of every project that references NssStream (the same way
-`proxymap_nss.dll` is handled). Place `sqlite3.dll` into the same `dist`
-lib directory (see step 3) and it will be copied along as well. Simply run:
+`proxymap_nss.dll` is handled). The complete runtime set from `dist` —
+including `sqlite3.dll` produced by the NSS build itself — is copied
+along. Simply run:
 
 ```powershell
 dotnet run --project NssConsole
