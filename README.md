@@ -89,13 +89,20 @@ libraries Firefox itself uses:
 - **Linux:** install `libnss3` (present on virtually every distribution).
 - **Windows:** the NSS/NSPR DLLs (`nspr4.dll`, `nss3.dll`, `ssl3.dll`,
   `nssutil3.dll`, `plc4.dll`, `plds4.dll`, `softokn3.dll`, `freebl3.dll`)
-  must be reachable by the process. When building from source in this
-  repository they are copied next to the executable automatically; otherwise
-  copy them from a Firefox installation or from an NSS source build into the
-  application directory. (The gyp build of NSS links the softoken module
+  must be reachable by the process, **plus `sqlite3.dll`** (softoken loads
+  it dynamically at startup even in NoDB mode). When building from source
+  in this repository they are copied next to the executable automatically;
+  otherwise copy them from an NSS source build into the application
+  directory. (The gyp build of NSS links the softoken module
   into `nss3.dll`; at startup, however, softoken dynamically loads
   `freebl3.dll`, so it must be present too — otherwise `NSS_NoDB_Init`
-  fails with "error 126" (ERROR_MOD_NOT_FOUND).)
+  fails with "error 126" (ERROR_MOD_NOT_FOUND). A missing or
+  wrong-architecture `sqlite3.dll` makes the same call fail with
+  "error 193" (ERROR_BAD_EXE_FORMAT) — `PR_LOAD_LIBRARY_ERROR` (-5977).
+  Note that PATH can silently change *which* `sqlite3.dll` gets picked up:
+  if the application directory has none, the loader walks PATH and may
+  load a wrong-bitness copy from another tool's directory (PHP, MSYS2,
+  MinGW, ...).)
 
 ```powershell
 dotnet add package NssStream
@@ -272,6 +279,16 @@ The result lands in `..\dist\Release` (with `--opt`; without it — `..\dist\Deb
   `freebl3.dll` must be present (the latter two are also picked up
   automatically by `NssStream.csproj`).
 
+  **Important:** the NSS build does **not** produce `sqlite3.dll`, but
+  softoken dynamically loads it during `NSS_NoDB_Init` anyway. Place a
+  64-bit `sqlite3.dll` (e.g. from the "Precompiled Windows x64 DLL" archive
+  on [sqlite.org](https://www.sqlite.org/download.html)) into
+  `..\dist\Release\lib` (or `..\dist\Debug\lib`) — `NssStream.csproj`
+  copies it to the output directory when present. Without it,
+  `NSS_NoDB_Init` fails with `PR_LOAD_LIBRARY_ERROR (-5977)`, typically
+  wrapping Win32 error 193 (ERROR_BAD_EXE_FORMAT) when a wrong-bitness
+  `sqlite3.dll` is found on PATH instead.
+
 **4. Build the wrapper** — open a *Developer PowerShell for VS 2022 (x64)*:
 
 ```powershell
@@ -289,7 +306,8 @@ up `nspr4.dll`, `nss3.dll`, `ssl3.dll`, `nssutil3.dll`, `plc4.dll`,
 `plds4.dll`, `softokn3.dll` and `freebl3.dll` from
 `..\dist\{Release,Debug}\lib` and copies them to the
 output directory of every project that references NssStream (the same way
-`proxymap_nss.dll` is handled). Simply run:
+`proxymap_nss.dll` is handled). Place `sqlite3.dll` into the same `dist`
+lib directory (see step 3) and it will be copied along as well. Simply run:
 
 ```powershell
 dotnet run --project NssConsole
