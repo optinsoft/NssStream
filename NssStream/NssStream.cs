@@ -9,7 +9,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Threading.Channels;
 using Microsoft.Win32.SafeHandles;
 
-public sealed class NssStream : Stream
+public sealed partial class NssStream : Stream
 {
     public const string ChromeCipherSuitePreset = 
         "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:" +
@@ -1063,7 +1063,7 @@ public sealed class NssStream : Stream
     // Native API
     // ------------------------------------------------------------
 
-    private static class Native
+    private static partial class Native
     {
         internal const int PMS_SSL_OK = 1;
         internal const int PMS_SSL_ZERO_RETURN = 0;
@@ -1077,112 +1077,100 @@ public sealed class NssStream : Stream
             protected override bool ReleaseHandle() { Native.pms_ssl_free(handle); return true; }
         }
 
-        [DllImport(
+        [LibraryImportAttribute(
             "proxymap_nss",
-            CallingConvention = CallingConvention.Cdecl,
-            EntryPoint = "pms_ssl_create")]
-        internal static extern IntPtr pms_ssl_create(
-            [MarshalAs(UnmanagedType.LPUTF8Str)] string hostname,
-            [MarshalAs(UnmanagedType.LPUTF8Str)] string cipherList,
+            EntryPoint = "pms_ssl_create",
+            StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial IntPtr pms_ssl_create(
+            string hostname,
+            string cipherList,
             int enableGrease,
             int enableEchGrease,
-            [MarshalAs(UnmanagedType.LPUTF8Str)] string alpnProtos,
-            [MarshalAs(UnmanagedType.LPUTF8Str)] string alpsProtos,
-            [MarshalAs(UnmanagedType.LPUTF8Str)] string trustAnchors,
-            [MarshalAs(UnmanagedType.LPUTF8Str)] string sigAlgs,
+            string alpnProtos,
+            string alpsProtos,
+            string trustAnchors,
+            string sigAlgs,
             int enableSignedCertTimestamps,
             int setOcspStatusType,
             int enableBrotli);
 
-        [DllImport(
+        [LibraryImportAttribute(
             "proxymap_nss",
-            CallingConvention = CallingConvention.Cdecl,
             EntryPoint = "pms_ssl_connect")]
-        internal static extern int pms_ssl_connect(
+        internal static partial int pms_ssl_connect(
             SslHandle connection);
 
-        [DllImport(
+        [LibraryImportAttribute(
             "proxymap_nss",
-            CallingConvention = CallingConvention.Cdecl,
             EntryPoint = "pms_ssl_feed_read")]
-        internal static extern int pms_ssl_feed_read(
+        internal static partial int pms_ssl_feed_read(
             SslHandle connection,
             IntPtr buffer,
             int length);
 
-        [DllImport(
+        [LibraryImportAttribute(
             "proxymap_nss",
-            CallingConvention = CallingConvention.Cdecl,
             EntryPoint = "pms_ssl_take_write")]
-        internal static extern int pms_ssl_take_write(
+        internal static partial int pms_ssl_take_write(
             SslHandle connection,
             IntPtr buffer,
             int length);
 
-        [DllImport(
+        [LibraryImportAttribute(
             "proxymap_nss",
-            CallingConvention = CallingConvention.Cdecl,
             EntryPoint = "pms_ssl_pending_write")]
-        internal static extern int pms_ssl_pending_write(
+        internal static partial int pms_ssl_pending_write(
             SslHandle connection);
 
-        [DllImport(
+        [LibraryImportAttribute(
             "proxymap_nss",
-            CallingConvention = CallingConvention.Cdecl,
             EntryPoint = "pms_ssl_read")]
-        internal static extern int pms_ssl_read(
+        internal static partial int pms_ssl_read(
             SslHandle connection,
             IntPtr buffer,
             int length);
 
-        [DllImport(
+        [LibraryImportAttribute(
             "proxymap_nss",
-            CallingConvention = CallingConvention.Cdecl,
             EntryPoint = "pms_ssl_write")]
-        internal static extern int pms_ssl_write(
+        internal static partial int pms_ssl_write(
             SslHandle connection,
             IntPtr buffer,
             int length);
 
-        [DllImport(
+        [LibraryImportAttribute(
             "proxymap_nss",
-            CallingConvention = CallingConvention.Cdecl,
             EntryPoint = "pms_ssl_get_protocol_version")]
-        internal static extern IntPtr pms_ssl_get_protocol_version(
+        internal static partial IntPtr pms_ssl_get_protocol_version(
             SslHandle connection);
 
-        [DllImport(
+        [LibraryImportAttribute(
             "proxymap_nss",
-            CallingConvention = CallingConvention.Cdecl,
             EntryPoint = "pms_ssl_get_cipher_name")]
-        internal static extern IntPtr pms_ssl_get_cipher_name(
+        internal static partial IntPtr pms_ssl_get_cipher_name(
             SslHandle connection);
 
-        [DllImport(
+        [LibraryImportAttribute(
             "proxymap_nss",
-            CallingConvention = CallingConvention.Cdecl,
             EntryPoint = "pms_ssl_get_alpn_selected")]
-        internal static extern IntPtr pms_ssl_get_alpn_selected(
+        internal static partial IntPtr pms_ssl_get_alpn_selected(
             SslHandle connection);
 
-        [DllImport(
+        [LibraryImportAttribute(
             "proxymap_nss",
-            CallingConvention = CallingConvention.Cdecl,
             EntryPoint = "pms_ssl_get_last_error")]
-        internal static extern IntPtr pms_ssl_get_last_error();
+        internal static partial IntPtr pms_ssl_get_last_error();
 
-        [DllImport(
+        [LibraryImportAttribute(
             "proxymap_nss",
-            CallingConvention = CallingConvention.Cdecl,
             EntryPoint = "pms_ssl_free")]
-        internal static extern void pms_ssl_free(
+        internal static partial void pms_ssl_free(
             IntPtr connection);
 
-        [DllImport(
+        [LibraryImportAttribute(
             "proxymap_nss",
-            CallingConvention = CallingConvention.Cdecl,
             EntryPoint = "pms_ssl_get_peer_certificate")]
-        internal static extern int pms_ssl_get_peer_certificate(
+        internal static partial int pms_ssl_get_peer_certificate(
             SslHandle connection,
             IntPtr buffer,
             int maxLength);
