@@ -69,8 +69,9 @@
     <None Include="../dist/Release/lib/freebl3.dll"
           Link="freebl3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
           Condition="Exists('../dist/Release/lib/freebl3.dll')" />
-	<None Include="../dist/Release/lib/sqlite3.dll" 
-		  Link="sqlite3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false" />
+	<None Include="../dist/Release/lib/sqlite3.dll"
+		  Link="sqlite3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+		  Condition="Exists('../dist/Release/lib/sqlite3.dll')" />
 
     <None Include="../dist/Debug/lib/nspr4.dll"
           Link="nspr4.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
@@ -96,6 +97,9 @@
     <None Include="../dist/Debug/lib/freebl3.dll"
           Link="freebl3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
           Condition="!Exists('../dist/Release/lib/freebl3.dll') AND Exists('../dist/Debug/lib/freebl3.dll')" />
+    <None Include="../dist/Debug/lib/sqlite3.dll"
+          Link="sqlite3.dll" CopyToOutputDirectory="PreserveNewest" Pack="false"
+          Condition="!Exists('../dist/Release/lib/sqlite3.dll') AND Exists('../dist/Debug/lib/sqlite3.dll')" />
     <None Include="../Native/build/libproxymap_nss.so"
           Link="libproxymap_nss.so"
           CopyToOutputDirectory="PreserveNewest"
