@@ -27,11 +27,11 @@ await using NetworkStream networkStream = client.GetStream();
 using var sslStream = new NssStream(
     networkStream,
     host,
-    cipherList: Environment.GetEnvironmentVariable("NSS_CIPHERS") ?? NssSsl.NssStream.ChromeCipherSuitePreset,
+    cipherList: Environment.GetEnvironmentVariable("NSS_CIPHERS") ?? NssSsl.NssStream.FirefoxCipherSuitePreset,
     enableGrease: Environment.GetEnvironmentVariable("NSS_GREASE") is null
-        ? NssSsl.NssStream.ChromeEnableGreasePreset
+        ? NssSsl.NssStream.FirefoxEnableGreasePreset
         : (Environment.GetEnvironmentVariable("NSS_GREASE") == "1" ? 1 : 0),
-    sigAlgs: Environment.GetEnvironmentVariable("NSS_SIGALGS") ?? NssSsl.NssStream.ChromeSignatureAlgorithmsPreset);
+    sigAlgs: Environment.GetEnvironmentVariable("NSS_SIGALGS") ?? NssSsl.NssStream.FirefoxSignatureAlgorithmsPreset);
 
 Console.WriteLine("Starting NSS handshake...");
 

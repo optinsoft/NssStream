@@ -50,11 +50,14 @@ that showcases the library by connecting to real HTTPS endpoints, and an
   (SAN) and Common Names (CN), including strict adherence to RFC 6125 wildcard
   rules (preventing sub-domain bypasses).
 - **TLS 1.2 / TLS 1.3 with configurable cipher suites and signature
-  algorithms:** the Chrome-style presets are translated into NSS settings:
+  algorithms:** the Firefox-style presets are translated into NSS settings:
   `SSL_CipherPrefSet` (exact cipher suite filtering), `SSL_SignatureSchemePrefSet`,
-  `SSL_ENABLE_GREASE` (NSS 3.97+ implements RFC 8701 GREASE, including a GREASE
-  ALPN entry), `SSL_ENABLE_CH_EXTENSION_PERMUTATION` (random extension
-  ordering), and ALPN with correct preference order (the wrapper compensates
+  `SSL_NamedGroupConfig` (Firefox's exact named-group list and priority order),
+  `SSL_SendAdditionalKeyShares` (three key shares, like Firefox),
+  `SSL_ENABLE_DELEGATED_CREDENTIALS`, `SSL_ENABLE_SESSION_TICKETS`, the ECH
+  GREASE extension (`SSL_EnableTls13GreaseEch`, NSS 3.68+), the
+  `compress_certificate` extension (`SSL_SetCertificateCompressionAlgorithm`,
+  zlib), and ALPN with correct preference order (the wrapper compensates
   the NPN-style reordering `SSL_SetNextProtoNego` performs internally).
 - **Native HTTP/2 Support:** Fully supports HTTP/2 protocol negotiation via
   ALPN ("h2"). Features a lightweight frame processing pipeline, HPACK binary
@@ -63,17 +66,24 @@ that showcases the library by connecting to real HTTPS endpoints, and an
 
 ### NSS-specific limitations
 
-The ClientHello resembles NSS/Firefox, not Chrome. BoringSSL features that
-NSS (as of version 3.98) does not expose are accepted in the API but silently
+The ClientHello replicates a real Firefox ClientHello (see
+`.tmp/tls.peet.ws.txt` for the reference capture). NSS features that are
+unavailable in the linked NSS version are accepted in the API but silently
 ignored:
 
 - `alpsProtos` — NSS has no ALPS support;
 - `trustAnchors` — the BoringSSL `requested_trust_anchors` extension;
-- `enableBrotli` — NSS has no TLS certificate compression;
-- `enableEchGrease` — NSS has no ECH GREASE (use `SSL_SetClientEchConfigs` for
-  real ECH, not exposed by this wrapper);
+- `enableEchGrease` — requires the experimental `SSL_EnableTls13GreaseEch`
+  API (NSS 3.68+); silently skipped on older NSS;
+- `enableBrotli` — registers RFC 8879 certificate compression for zlib via
+  `SSL_SetCertificateCompressionAlgorithm` (requires NSS with that
+  experimental API and a zlib build dependency); silently skipped when
+  unavailable — the advertised algorithm list is zlib only (JA4/JA3 hash
+  extension types, not their contents);
 - ML-DSA signature algorithms (`ML-DSA-44/65/87`) are skipped unless the
-  linked NSS version supports them.
+  linked NSS version supports them;
+- the X25519MLKEM768 named group is skipped on NSS versions without ML-KEM
+  support (earlier than 3.101).
 
 ## Installation
 
@@ -394,9 +404,10 @@ dotnet test NssStream.Tests
 The underlying architecture is fully complete, completely thread-safe, and
 passes the full test suite (echo, 64 MB concurrent read+write, dispose-during-
 IO, ALPN override, certificate policy errors). The ClientHello is authentic
-NSS/Firefox output — cipher suite selection, GREASE, extension permutation and
-ALPN ordering all follow the configured presets, limited only by what the
-linked NSS version supports.
+NSS/Firefox output — cipher suite selection, named groups, key shares,
+delegated credentials, the ECH GREASE and compress_certificate extensions,
+session tickets and ALPN ordering all follow the configured presets, limited
+only by what the linked NSS version supports.
 
 ## License
 

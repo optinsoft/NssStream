@@ -11,32 +11,38 @@ using Microsoft.Win32.SafeHandles;
 
 public sealed partial class NssStream : Stream
 {
-    public const string ChromeCipherSuitePreset = 
+    // Presets matching a real Firefox ClientHello (captured via
+    // https://tls.peet.ws/api/tls, see .tmp/tls.peet.ws.txt):
+    //
+    // ja3:  771,4865-4867-4866-49195-49199-52393-52392-49196-49200-49162-
+    //       49171-49172-156-157-47-53,
+    //       0-23-65281-10-11-35-16-5-34-18-51-43-13-45-28-27-65037,
+    //       4588-29-23-24-25-256-257,0
+    // ja4:  t13d1617h2_86a278354501_3cbfd9057e0d
+    //
+    // The TLS 1.3 suites (TLS_AES_* / TLS_CHACHA20_*) are always enabled
+    // by NSS and are therefore not part of the cipher list below; the
+    // ClientHello order follows NSS's implementation order, which matches
+    // Firefox.
+    public const string FirefoxCipherSuitePreset =
         "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:" +
-        "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:" +
         "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:" +
-        "ECDHE-RSA-AES128-SHA:ECDHE-RSA-AES256-SHA:" +
+        "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:" +
+        "ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES128-SHA:ECDHE-RSA-AES256-SHA:" +
         "AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA:AES256-SHA";
-    public const int ChromeEnableGreasePreset = 1;
-    public const int ChromeEnableEchGreasePreset = 1;
-    public const string ChromeAlpnPreset = "h2:http/1.1";
-    public const string ChromeAlpsPreset = "h2";
-    public const string ChromeTrustAnchorsPreset = 
-        "0582df1302010582df1302060582df13020d0582df13020e0582df1302" +
-        "0f0582df1302120582df1302130582df13021408839a648c9b2d010708" +
-        "839a648c9b2d010808839a648c9b2d010908839a648c9b2d010a08839a" +
-        "648c9b2d010b08839a648c9b2d010c08839a648c9b2d010d08839a648c" +
-        "9b2d011208839a648c9b2d011304d679090104d679090404d679090504" +
-        "d679090604d679090704d679090804d679090a04d679090b04d679090c" +
-        "04d679090d04d679090f";
-    public const string ChromeSignatureAlgorithmsPreset = 
-        "ML-DSA-44:ML-DSA-65:ML-DSA-87:" +
-        "ECDSA-SECP256R1-SHA256:RSA-PSS-RSAE-SHA256:RSA-PKCS1-SHA256:" +
-        "ECDSA-SECP384R1-SHA384:RSA-PSS-RSAE-SHA384:RSA-PKCS1-SHA384:" +
-        "RSA-PSS-RSAE-SHA512:RSA-PKCS1-SHA512";
-    public const int ChromeEnableSignedCertTimestampsPreset = 1;
-    public const int ChromeSetOcspStatusTypePreset = 1;
-    public const int ChromeEnableBrotliPreset = 1;
+    public const int FirefoxEnableGreasePreset = 0;
+    public const int FirefoxEnableEchGreasePreset = 1;
+    public const string FirefoxAlpnPreset = "h2:http/1.1";
+    public const string FirefoxAlpsPreset = "";
+    public const string FirefoxTrustAnchorsPreset = "";
+    public const string FirefoxSignatureAlgorithmsPreset =
+        "ECDSA-SECP256R1-SHA256:ECDSA-SECP384R1-SHA384:ECDSA-SECP521R1-SHA512:" +
+        "RSA-PSS-RSAE-SHA256:RSA-PSS-RSAE-SHA384:RSA-PSS-RSAE-SHA512:" +
+        "RSA-PKCS1-SHA256:RSA-PKCS1-SHA384:RSA-PKCS1-SHA512:" +
+        "ECDSA-SHA1:RSA-PKCS1-SHA1";
+    public const int FirefoxEnableSignedCertTimestampsPreset = 1;
+    public const int FirefoxSetOcspStatusTypePreset = 1;
+    public const int FirefoxEnableBrotliPreset = 1;
 
     private const int NetworkBufferSize = 16 * 1024;
 
@@ -121,16 +127,16 @@ public sealed partial class NssStream : Stream
     public NssStream(
         Stream innerStream,
         string hostname,
-        string cipherList = ChromeCipherSuitePreset,
-        int enableGrease = ChromeEnableGreasePreset,
-        int enableEchGrease = ChromeEnableEchGreasePreset,        
-        string alpnProtos = ChromeAlpnPreset,
-        string alpsProtos = ChromeAlpsPreset,
-        string trustAnchors = ChromeTrustAnchorsPreset,
-        string sigAlgs = ChromeSignatureAlgorithmsPreset,
-        int enableSignedCertTimestamps = ChromeEnableSignedCertTimestampsPreset,
-        int setOcspStatusType = ChromeSetOcspStatusTypePreset,
-        int enableBrotli = ChromeEnableBrotliPreset,
+        string cipherList = FirefoxCipherSuitePreset,
+        int enableGrease = FirefoxEnableGreasePreset,
+        int enableEchGrease = FirefoxEnableEchGreasePreset,        
+        string alpnProtos = FirefoxAlpnPreset,
+        string alpsProtos = FirefoxAlpsPreset,
+        string trustAnchors = FirefoxTrustAnchorsPreset,
+        string sigAlgs = FirefoxSignatureAlgorithmsPreset,
+        int enableSignedCertTimestamps = FirefoxEnableSignedCertTimestampsPreset,
+        int setOcspStatusType = FirefoxSetOcspStatusTypePreset,
+        int enableBrotli = FirefoxEnableBrotliPreset,
         bool leaveOpen = false)
     {
         ArgumentNullException.ThrowIfNull(innerStream);

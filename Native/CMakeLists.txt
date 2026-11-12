@@ -3,11 +3,15 @@ project(proxymap_nss C)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# zlib: used for the RFC 8879 certificate compression callbacks (the
+# compress_certificate extension advertises zlib).
+
 # NSS and NSPR: prefer pkg-config (libnss3-dev / libnspr4-dev install
 # nss.pc and nspr.pc), fall back to plain header/library discovery, and
 # allow explicit overrides for custom prefixes:
 #   cmake -DNSS_INCLUDE_DIR=/opt/nss/include/nss -DNSS_LIBRARY_DIR=/opt/nss/lib ...
 find_package(PkgConfig QUIET)
+find_package(ZLIB REQUIRED)
 if (PkgConfig_FOUND)
     set(ENV{PKG_CONFIG_PATH} "${NSS_LIBRARY_DIR}/pkgconfig:$ENV{PKG_CONFIG_PATH}")
     pkg_check_modules(NSS QUIET nss)
@@ -62,7 +66,7 @@ endif()
 
 target_include_directories(proxymap_nss PRIVATE ${NSS_INCLUDE_DIRS})
 
-target_link_libraries(proxymap_nss PRIVATE ${NSS_LIBRARIES})
+target_link_libraries(proxymap_nss PRIVATE ${NSS_LIBRARIES} ZLIB::ZLIB)
 
 target_compile_features(proxymap_nss PRIVATE c_std_11)
 

@@ -30,11 +30,14 @@
 #include <nspr.h>
 #include <nss.h>
 #include <ssl.h>
+#include <sslexp.h>
 #include <sslproto.h>
 #include <sslerr.h>
 #include <prerror.h>
 #include <prlock.h>
 #include <cert.h>
+#include <secerr.h>
+#include <zlib.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -465,7 +468,7 @@ typedef struct NswCipherEntry
     PRUint16 cipher;
 } NswCipherEntry;
 
-/* Maps OpenSSL-style cipher suite names (as used by the Chrome presets)
+/* Maps OpenSSL-style cipher suite names (as used by the Firefox presets)
  * to IANA TLS cipher suite codes understood by NSS. */
 static const NswCipherEntry g_cipher_map[] = {
     { "ECDHE-ECDSA-AES128-GCM-SHA256", 0xC02B },
@@ -474,6 +477,7 @@ static const NswCipherEntry g_cipher_map[] = {
     { "ECDHE-RSA-AES256-GCM-SHA384", 0xC030 },
     { "ECDHE-ECDSA-CHACHA20-POLY1305", 0xCCA9 },
     { "ECDHE-RSA-CHACHA20-POLY1305", 0xCCA8 },
+    { "ECDHE-ECDSA-AES256-SHA", 0xC00A },
     { "ECDHE-RSA-AES128-SHA", 0xC013 },
     { "ECDHE-RSA-AES256-SHA", 0xC014 },
     { "AES128-GCM-SHA256", 0x009C },
@@ -491,7 +495,7 @@ typedef struct NswSignatureEntry
     SSLSignatureScheme scheme;
 } NswSignatureEntry;
 
-/* Maps BoringSSL-style signature algorithm names (as used by the Chrome
+/* Maps BoringSSL-style signature algorithm names (as used by the Firefox
  * presets) to NSS SSLSignatureScheme values. Schemes not supported by
  * the linked NSS version (e.g. ML-DSA) are silently skipped. */
 static const NswSignatureEntry g_signature_map[] = {
@@ -573,6 +577,123 @@ static SECStatus PR_CALLBACK nsw_auth_certificate_hook(
 }
 
 /* ------------------------------------------------------------------ */
+/* RFC 8879 certificate compression (the compress_certificate xtn)      */
+/*                                                                      */
+/* Firefox advertises the certificate_compression extension with        */
+/* zlib/brotli/zstd. This NSS build only ships zlib, so zlib is         */
+/* registered here: the extension is advertised either way (which is    */
+/* all JA4/JA3 look at) and the negotiated algorithm can then only be   */
+/* zlib, which the callbacks below implement for real.                  */
+/*                                                                      */
+/* The public SSLCertificateCompressionAlgorithm type was renamed       */
+/* between NSS releases (SSLCertificateCompressionAlgorithmType in      */
+/* 3.98 vs SSLCertificateCompressionAlgorithm later), so the wire-      */
+/* compatible layout is mirrored here and the experimental API is       */
+/* resolved by name via SSL_GetExperimentalAPI.                         */
+/* ------------------------------------------------------------------ */
+/* zlib callback pair for RFC 8879 certificate compression.             */
+/* encode() receives an input SECItem and must allocate + fill the      */
+/* output SECItem (NSS frees it with SECITEM_FreeItem); decode()        */
+/* receives the output buffer and reports the bytes it produced.        */
+/* ------------------------------------------------------------------ */
+
+static SECStatus nsw_zlib_encode(const SECItem* input, SECItem* output)
+{
+    uLong bound;
+    uLong encodedLen;
+    PRUint8* data;
+
+    if (!input || !input->data || !output)
+    {
+        return SECFailure;
+    }
+
+    bound = compressBound((uLong)input->len);
+    data = (PRUint8*)PORT_Alloc((size_t)bound);
+    if (!data)
+    {
+        PORT_SetError(SEC_ERROR_NO_MEMORY);
+        return SECFailure;
+    }
+
+    encodedLen = bound;
+    if (compress2(data, &encodedLen, input->data,
+                  (uLong)input->len, Z_DEFAULT_COMPRESSION) != Z_OK)
+    {
+        PORT_Free(data);
+        PORT_SetError(SEC_ERROR_IO);
+        return SECFailure;
+    }
+
+    output->type = siBuffer;
+    output->data = data;
+    output->len = (unsigned int)encodedLen;
+    return SECSuccess;
+}
+
+static SECStatus nsw_zlib_decode(
+    const SECItem* input, unsigned char* output, size_t outputLen,
+    size_t* usedLen)
+{
+    uLongf decodedLen;
+
+    if (!input || !input->data || !output || !usedLen || outputLen == 0)
+    {
+        return SECFailure;
+    }
+
+    decodedLen = (uLongf)outputLen;
+    if (uncompress(output, &decodedLen, input->data,
+                   (uLong)input->len) != Z_OK)
+    {
+        return SECFailure;
+    }
+
+    *usedLen = (size_t)decodedLen;
+    return SECSuccess;
+}
+
+typedef struct NswCertCompressionAlgorithmStr
+{
+    PRUint16 id;
+    const char* name;
+    SECStatus (*encode)(const SECItem* input, SECItem* output);
+    SECStatus (*decode)(
+        const SECItem* input, unsigned char* output, size_t outputLen,
+        size_t* usedLen);
+} NswCertCompressionAlgorithm;
+
+/* Registers the zlib certificate compression algorithm. Returns
+ * PR_TRUE when the running NSS supports RFC 8879 (older versions like
+ * 3.98 lack the experimental API, in which case the
+ * compress_certificate extension is simply not sent). */
+static PRBool nsw_enable_cert_compression(PRFileDesc* fd)
+{
+    static const NswCertCompressionAlgorithm zlibAlg = {
+        1,               /* zlib */
+        "zlib",
+        nsw_zlib_encode,
+        nsw_zlib_decode
+    };
+
+    typedef SECStatus (*SetCertCompressionFn)(
+        PRFileDesc*, NswCertCompressionAlgorithm);
+
+    void* api = SSL_GetExperimentalAPI(
+        "SSL_SetCertificateCompressionAlgorithm");
+    if (!api)
+    {
+        return PR_FALSE;
+    }
+
+    return ((SetCertCompressionFn)api)(fd, zlibAlg) == SECSuccess
+        ? PR_TRUE
+        : PR_FALSE;
+}
+
+/* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
 /* Exported API (identical to the BoringSSL wrapper)                    */
 /* ------------------------------------------------------------------ */
 
@@ -589,10 +710,8 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
     int set_ocsp_status_type,
     int enable_brotli)
 {
-    (void)enable_ech_grease;   /* NSS has no ECH GREASE */
     (void)alps_protos;         /* NSS has no ALPS support */
     (void)trust_anchors;       /* BoringSSL-specific extension */
-    (void)enable_brotli;       /* NSS has no certificate compression */
 
     if (!hostname || !hostname[0])
     {
@@ -683,12 +802,42 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
         return NULL;
     }
 
-    /* Chrome and Firefox send key shares for the first two named groups
-     * (e.g. X25519MLKEM768 and x25519), which lets most servers complete
-     * the handshake without a HelloRetryRequest. NSS sends a share for
-     * one group only, which triggers an HRR and a second ClientHello —
-     * match the browsers here. */
-    if (SSL_SendAdditionalKeyShares(fd, 1) != SECSuccess)
+    /* Firefox offers exactly these groups, in this order (X25519MLKEM768,
+     * x25519, P-256, P-384, P-521, ffdhe2048, ffdhe3072); every other
+     * implemented group is disabled. Older NSS builds without ML-KEM
+     * reject the hybrid group, so retry without it. */
+    {
+        static const SSLNamedGroup firefoxGroups[] = {
+            (SSLNamedGroup)4588,          /* X25519MLKEM768 */
+            ssl_grp_ec_curve25519,
+            ssl_grp_ec_secp256r1,
+            ssl_grp_ec_secp384r1,
+            ssl_grp_ec_secp521r1,
+            ssl_grp_ffdhe_2048,
+            ssl_grp_ffdhe_3072
+        };
+        unsigned groupCount =
+            (unsigned)(sizeof(firefoxGroups) / sizeof(firefoxGroups[0]));
+
+        SECStatus rv = SSL_NamedGroupConfig(fd, firefoxGroups, groupCount);
+        if (rv != SECSuccess)
+        {
+            rv = SSL_NamedGroupConfig(fd, firefoxGroups + 1, groupCount - 1);
+        }
+        if (rv != SECSuccess)
+        {
+            SetLastErrorF("SSL_NamedGroupConfig failed", PR_GetError());
+            PR_Close(fd);
+            return NULL;
+        }
+    }
+
+    /* Firefox sends key shares for the first three named groups
+     * (X25519MLKEM768, x25519 and P-256), which lets most servers
+     * complete the handshake without a HelloRetryRequest. NSS sends a
+     * share for one group only by default, which triggers an HRR and a
+     * second ClientHello - match Firefox here. */
+    if (SSL_SendAdditionalKeyShares(fd, 2) != SECSuccess)
     {
         SetLastErrorF("SSL_SendAdditionalKeyShares failed", PR_GetError());
         PR_Close(fd);
@@ -795,6 +944,21 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
         SSL_OptionSet(fd, SSL_ENABLE_CH_EXTENSION_PERMUTATION, PR_TRUE);
     }
 
+    if (enable_ech_grease)
+    {
+        /* Firefox appends the GREASE encrypted_client_hello extension
+         * (0xFE0D) to every ClientHello. Available via the experimental
+         * API since NSS 3.68; ignored when the linked NSS is older. */
+        if (SSL_EnableTls13GreaseEch(fd, PR_TRUE) != SECSuccess)
+        {
+            SetLastError("SSL_EnableTls13GreaseEch is not available");
+        }
+        /* Firefox pads the GREASE ECH extension so it is 281 bytes long,
+         * which also keeps the ClientHello past the 512-byte boundary
+         * above which NSS stops adding the padding extension. */
+        SSL_SetTls13GreaseEchSize(fd, 223);
+    }
+
     /* ALPN: convert "h2:http/1.1" into the 8-bit length-prefixed wire
      * format expected by SSL_SetNextProtoNego. */
     if (alpn_protos && alpn_protos[0])
@@ -894,6 +1058,21 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
     if (set_ocsp_status_type)
     {
         SSL_OptionSet(fd, SSL_ENABLE_OCSP_STAPLING, PR_TRUE);
+    }
+
+    /* Firefox sends the session_ticket extension in every ClientHello;
+     * NSS disables session tickets by default. */
+    SSL_OptionSet(fd, SSL_ENABLE_SESSION_TICKETS, PR_TRUE);
+
+    /* Firefox sends the delegated_credentials extension in every
+     * ClientHello; NSS disables delegated credentials by default. */
+    SSL_OptionSet(fd, SSL_ENABLE_DELEGATED_CREDENTIALS, PR_TRUE);
+
+    /* enable_brotli maps to the RFC 8879 certificate_compression
+     * extension (see the note at nsw_enable_cert_compression). */
+    if (enable_brotli)
+    {
+        nsw_enable_cert_compression(fd);
     }
 
     /* SNI and the session cache key. */
