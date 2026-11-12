@@ -10,7 +10,7 @@
 
     <!-- NuGet package metadata -->
     <PackageId>NssStream</PackageId>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <Authors>Vitaly Yakovlev (optinsoft)</Authors>
     <Owners>optinsoft</Owners>
     <Copyright>Copyright © Vitaly Yakovlev, vitaly@optinsoft.net</Copyright>

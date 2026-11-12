@@ -66,10 +66,9 @@ that showcases the library by connecting to real HTTPS endpoints, and an
 
 ### NSS-specific limitations
 
-The ClientHello replicates a real Firefox ClientHello (see
-`.tmp/tls.peet.ws.txt` for the reference capture). NSS features that are
-unavailable in the linked NSS version are accepted in the API but silently
-ignored:
+The ClientHello replicates a real Firefox ClientHello. NSS features that
+are unavailable in the linked NSS version are accepted in the API but
+silently ignored:
 
 - `alpsProtos` — NSS has no ALPS support;
 - `trustAnchors` — the BoringSSL `requested_trust_anchors` extension;
@@ -141,8 +140,10 @@ so it can be dropped in wherever a TLS stream is expected.
 
 ## Building from source
 
-Unlike BoringSslStream this repository has **no Git submodules** — NSS and
-NSPR are used from the operating system packages:
+NSS and NSPR are vendored as **Git submodules** (`nss`, `nspr`) — the
+same sources Firefox itself is built from, which guarantees the exact
+NSS behavior (ML-KEM, RFC 8879 certificate compression, ECH GREASE)
+needed to replicate the Firefox ClientHello:
 
 ```text
 NssStream.sln
@@ -150,6 +151,14 @@ NssStream.sln
   NssConsole/       (Demo console application)
   NssStream.Tests/  (xUnit test suite)
   Native/           (Native C wrapper & CMake configuration)
+  nss/              (Git submodule — NSS sources)
+  nspr/             (Git submodule — NSPR sources)
+```
+
+To clone this repository along with the NSS and NSPR submodules, run:
+
+```bash
+git clone --recursive https://github.com/optinsoft/NssStream.git
 ```
 
 ### Prerequisites
@@ -173,6 +182,13 @@ NssStream.sln
 
   Alternatively, a custom NSS/NSPR prefix can be passed to CMake via
   `-DNSS_INCLUDE_DIR=... -DNSS_LIBRARY_DIR=...` (and the NSPR equivalents).
+  On Linux the build links the system NSS/NSPR by default; the `nss`/`nspr`
+  submodules are what the Windows build compiles (see below). To get the
+  full Firefox fingerprint on Linux as well (system NSS may be older than
+  3.101 and lack ML-KEM / certificate compression), build the submodules
+  and point CMake at their `dist` output — at runtime the process must
+  then load *those* NSS/NSPR shared libraries instead of the system ones
+  (e.g. via `LD_LIBRARY_PATH`).
 
   Note: at runtime only the NSS/NSPR **shared libraries** are used
   (`libnss3`, `libssl3`, `libnspr4`, ...), the same libraries Firefox itself
@@ -222,17 +238,7 @@ and the MSVC integration it provides. The NSS build additionally needs
 pip install gyp-next ninja
 ```
 
-**1. Get the NSS and NSPR sources.** NSS expects to find NSPR in the sibling
-directory `nspr`, so check both out side by side in the repository root
-(the gyp build of NSS compiles on Windows fine — only NSPR is built with
-`make`):
-
-```bat
-git clone https://github.com/mozilla/nss.git nss
-git clone https://github.com/mozilla/nspr.git nspr
-```
-
-**2. Install a real GNU make.** MozillaBuild does not ship `make.exe`, and
+**1. Install a real GNU make.** MozillaBuild does not ship `make.exe`, and
 without it the shell picks up whatever `make` it finds in the Windows PATH —
 which silently does nothing. Install GNU Make 4.x via `scoop install make`
 (or `choco install make`); it lands in
@@ -264,7 +270,7 @@ make -v   # must print "GNU Make 4.x"
 which link  # must point at .../Hostx64/x64/link
 ``````
 
-**3. Build NSS/NSPR** in the MozillaBuild shell (`start-shell.bat`):
+**2. Build NSS/NSPR** in the MozillaBuild shell (`start-shell.bat`):
 
 ```bash
 cd nss
@@ -298,7 +304,7 @@ The result lands in `..\dist\Release` (with `--opt`; without it — `..\dist\Deb
   (ERROR_BAD_EXE_FORMAT) when a wrong-bitness `sqlite3.dll` is found on
   PATH instead — e.g. one from PHP, MSYS2 or MinGW directories.
 
-**4. Build the wrapper** — open a *Developer PowerShell for VS 2022 (x64)*:
+**3. Build the wrapper** — open a *Developer PowerShell for VS 2022 (x64)*:
 
 ```powershell
 cd Native
@@ -310,7 +316,7 @@ is preferred over Debug; explicit paths can still be passed with
 `-NssIncludeDir / -NssLibraryDir / -NsprIncludeDir / -NsprLibraryDir`).
 It produces `build\Release\proxymap_nss.dll`.
 
-**5. Runtime DLLs.** No manual copying is needed: `NssStream.csproj` picks
+**4. Runtime DLLs.** No manual copying is needed: `NssStream.csproj` picks
 up `nspr4.dll`, `nss3.dll`, `ssl3.dll`, `nssutil3.dll`, `plc4.dll`,
 `plds4.dll`, `softokn3.dll` and `freebl3.dll` from
 `..\dist\{Release,Debug}\lib` and copies them to the
