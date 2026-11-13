@@ -88,14 +88,19 @@ silently ignored:
 
 The library ships as a self-contained NuGet package: the managed assembly and
 the prebuilt native binary (`proxymap_nss`) travel together under
-`runtimes/{RID}/native/`, so NuGet picks the correct binary for the consumer's
-platform automatically — no manual DLL copying.
+`runtimes/{RID}/native/` (`win-x64`, `linux-x64`, `osx-arm64`), so NuGet picks
+the correct binary for the consumer's platform automatically — no manual
+copying.
 
 Unlike BoringSslStream, the native binary links **dynamically** against the
 system NSS/NSPR libraries (`libnss3`, `libssl3`, `libnspr4`, ...), the same
 libraries Firefox itself uses:
 
 - **Linux:** install `libnss3` (present on virtually every distribution).
+- **macOS:** install NSS/NSPR via [Homebrew](https://brew.sh): `brew install nss`
+  (pulls in `nspr`). The native binary links against the Homebrew
+  libraries (`/opt/homebrew/opt/nss`, `/opt/homebrew/opt/nspr` on Apple
+  Silicon; `/usr/local/...` on Intel Macs).
 - **Windows:** the NSS/NSPR DLLs (`nspr4.dll`, `nss3.dll`, `ssl3.dll`,
   `nssutil3.dll`, `plc4.dll`, `plds4.dll`, `softokn3.dll`, `freebl3.dll`)
   must be reachable by the process, **plus `sqlite3.dll`** (softoken loads
@@ -180,10 +185,17 @@ git clone --recursive https://github.com/optinsoft/NssStream.git
   sudo dnf install nspr-devel nss-devel
   ```
 
+  macOS (Homebrew — also installs the `nss.pc`/`nspr.pc` pkg-config files,
+  so no extra paths are needed):
+
+  ```bash
+  brew install nss cmake ninja
+  ```
+
   Alternatively, a custom NSS/NSPR prefix can be passed to CMake via
   `-DNSS_INCLUDE_DIR=... -DNSS_LIBRARY_DIR=...` (and the NSPR equivalents).
-  On Linux the build links the system NSS/NSPR by default; the `nss`/`nspr`
-  submodules are what the Windows build compiles (see below). To get the
+  On Linux and macOS the build links the system NSS/NSPR by default; the
+  `nss`/`nspr` submodules are what the Windows build compiles (see below). To get the
   full Firefox fingerprint on Linux as well (system NSS may be older than
   3.101 and lack ML-KEM / certificate compression), build the submodules
   and point CMake at their `dist` output — at runtime the process must
@@ -194,6 +206,9 @@ git clone --recursive https://github.com/optinsoft/NssStream.git
   (`libnss3`, `libssl3`, `libnspr4`, ...), the same libraries Firefox itself
   uses — they are installed by default on virtually every Linux
   distribution. The `*-dev` packages above are needed for building only.
+  On macOS the Homebrew NSS/NSPR libraries are the runtime libraries too
+  (Homebrew updates `nss` promptly, so ML-KEM and RFC 8879 certificate
+  compression are available there).
 
   Windows has no system NSS: NSS/NSPR are built from source with
   [MozillaBuild](https://wiki.mozilla.org/MozillaBuild) — see the step-by-step
@@ -201,15 +216,18 @@ git clone --recursive https://github.com/optinsoft/NssStream.git
 
 ### Native library
 
-#### Linux / WSL
+#### Linux / macOS / WSL
 
 ```bash
 cd Native
 ./build.sh
 ```
 
-This produces `build/libproxymap_nss.so`. The wrapper is a thin C file
-(`nss_wrapper.c`) that links against the system `libssl3`/`libnss3`/`libnspr4`.
+On Linux (including WSL) this produces `build/libproxymap_nss.so`; on macOS —
+`build/libproxymap_nss.dylib`. The wrapper is a thin C file (`nss_wrapper.c`)
+that links against the system `libssl3`/`libnss3`/`libnspr4` on Linux and
+against the Homebrew NSS/NSPR libraries on macOS (found via pkg-config or
+the default `/opt/homebrew` / `/usr/local` prefixes).
 
 #### Windows
 
@@ -339,7 +357,13 @@ dotnet pack  NssStream/NssStream.csproj -c Release   # -> NssStream.1.0.0.nupkg
 
 The native binaries are copied into the .NET output directories automatically
 during local builds, and embedded into the NuGet package under
-`runtimes/linux-x64/native/` and `runtimes/win-x64/native/` when packing.
+`runtimes/linux-x64/native/`, `runtimes/win-x64/native/` and
+`runtimes/osx-arm64/native/` when packing. On Apple Silicon no extra flags are
+needed; for Intel Macs override the RID at pack time:
+
+```bash
+dotnet pack NssStream/NssStream.csproj -c Release -p:MacNativeRuntimeIdentifier=osx-x64
+```
 
 ## Demo console application
 
