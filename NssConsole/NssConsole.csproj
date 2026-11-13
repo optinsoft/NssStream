@@ -12,8 +12,8 @@
   </ItemGroup>
 
   <Target Name="EnsureNativeLibrary" BeforeTargets="Build"
-          Condition="!Exists('../Native/build/proxymap_nss.dll') AND !Exists('../Native/build/Release/proxymap_nss.dll') AND !Exists('../Native/build/libproxymap_nss.so')">
-    <Warning Text="Native library not found in ../Native/build. Run Native/build.ps1 (Windows) or Native/build.sh (Linux) first." />
+          Condition="!Exists('../Native/build/proxymap_nss.dll') AND !Exists('../Native/build/Release/proxymap_nss.dll') AND !Exists('../Native/build/libproxymap_nss.so') AND !Exists('../Native/build/libproxymap_nss.dylib')">
+    <Warning Text="Native library not found in ../Native/build. Run Native/build.ps1 (Windows), Native/build.sh (Linux) or 'bash Native/build.sh' (macOS) first." />
   </Target>
 
 </Project>
