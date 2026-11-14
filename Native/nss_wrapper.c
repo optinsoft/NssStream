@@ -582,11 +582,12 @@ static SECStatus PR_CALLBACK nsw_auth_certificate_hook(
 /*                                                                      */
 /* Firefox advertises the certificate_compression extension with        */
 /* zlib/brotli/zstd, in this order. zlib is statically linked from the  */
-/* vendored sources NSS ships in nss/lib/zlib; brotli and zstd are       */
-/* resolved at runtime from the system libraries                         */
-/* (libbrotlienc/libbrotlidec/libzstd), so no extra build dependency is  */
-/* no extra build dependency is introduced. Algorithms whose codec      */
-/* cannot be loaded are simply not advertised. NSS sends the            */
+/* vendored sources NSS ships in nss/lib/zlib, brotli is statically     */
+/* linked from the vendored sources in ../brotli (pass                  */
+/* -DNSW_STATIC_BROTLI=OFF to CMake to resolve brotli at runtime        */
+/* instead); zstd is resolved at runtime from the system library        */
+/* (libzstd), so no extra runtime dependency is introduced. Algorithms  */
+/* whose codec is unavailable are simply not advertised. NSS sends the  */
 /* registered algorithms in registration order, so the three codecs     */
 /* are registered in the Firefox order zlib(1), brotli(2), zstd(3).     */
 /*                                                                      */
@@ -669,13 +670,33 @@ typedef struct NswCertCompressionAlgorithmStr
 } NswCertCompressionAlgorithm;
 
 /* ------------------------------------------------------------------ */
-/* Runtime-loaded brotli codec (RFC 8879 algorithm id 2).               */
+/* brotli codec (RFC 8879 algorithm id 2).                               */
+/* Statically linked from the vendored ../brotli sources by default      */
+/* (NSW_BROTLI_STATIC); with -DNSW_STATIC_BROTLI=OFF the entry points    */
+/* are resolved at runtime via PR_LoadLibrary instead.                   */
 /* ------------------------------------------------------------------ */
 
 #define NSW_BROTLI_DEFAULT_QUALITY       11
 #define NSW_BROTLI_DEFAULT_WINDOW        22
 #define NSW_BROTLI_MODE_GENERIC          0
 #define NSW_BROTLI_DECODER_RESULT_SUCCESS 1
+
+#ifdef NSW_BROTLI_STATIC
+
+#include <brotli/decode.h>
+#include <brotli/encode.h>
+
+/* The real public headers provide the prototypes, so the actual entry
+ * points are wired up at compile time (const pointers, never NULL). */
+static BROTLI_BOOL (*const nsw_brotli_compress)(
+    int quality, int lgwin, BrotliEncoderMode mode,
+    size_t inputSize, const uint8_t* input,
+    size_t* encodedSize, uint8_t* encoded) = BrotliEncoderCompress;
+static BrotliDecoderResult (*const nsw_brotli_decompress)(
+    size_t encodedSize, const uint8_t* encoded,
+    size_t* decodedSize, uint8_t* decoded) = BrotliDecoderDecompress;
+
+#else /* !NSW_BROTLI_STATIC */
 
 typedef size_t (*NswBrotliEncoderCompressFn)(
     int quality, int lgwin, int mode,
@@ -687,6 +708,8 @@ typedef int (*NswBrotliDecoderDecompressFn)(
 
 static NswBrotliEncoderCompressFn nsw_brotli_compress;
 static NswBrotliDecoderDecompressFn nsw_brotli_decompress;
+
+#endif /* NSW_BROTLI_STATIC */
 
 static SECStatus nsw_brotli_encode(const SECItem* input, SECItem* output)
 {
@@ -846,14 +869,17 @@ static PRBool nsw_load_codec_symbol(
 
 static PRStatus nsw_load_compression_codecs(void)
 {
+#ifdef NSW_BROTLI_STATIC
+    /* brotli is statically linked and wired up at compile time; the
+     * encoder/decoder entry points are always available. */
+    nsw_brotli_loaded = PR_TRUE;
+#else /* !NSW_BROTLI_STATIC */
 #ifdef _WIN32
     static const char brotliEncLib[] = "brotlienc.dll";
     static const char brotliDecLib[] = "brotlidec.dll";
-    static const char zstdLib[] = "libzstd.dll";
 #else
     static const char brotliEncLib[] = "libbrotlienc.so.1";
     static const char brotliDecLib[] = "libbrotlidec.so.1";
-    static const char zstdLib[] = "libzstd.so.1";
 #endif
 
     if (nsw_load_codec_symbol(
@@ -865,6 +891,13 @@ static PRStatus nsw_load_compression_codecs(void)
     {
         nsw_brotli_loaded = PR_TRUE;
     }
+#endif /* NSW_BROTLI_STATIC */
+
+#ifdef _WIN32
+    static const char zstdLib[] = "libzstd.dll";
+#else
+    static const char zstdLib[] = "libzstd.so.1";
+#endif
 
     if (nsw_load_codec_symbol(
             zstdLib, "ZSTD_compress", (void**)&nsw_zstd_compress) &&

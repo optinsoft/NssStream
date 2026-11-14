@@ -31,6 +31,32 @@ endif()
 # Match NSS's own build (nss/lib/zlib/manifest.mn): silence the debug trace.
 target_compile_definitions(zlib_static PRIVATE verbose=-1)
 
+# brotli: statically linked from the vendored sources in ../brotli (same
+# situation as zlib above) so the wrapper has no runtime dependency on
+# libbrotlienc/libbrotlidec (brotlienc.dll/brotlidec.dll on Windows). Only
+# the entry points the wrapper needs are exercised
+# (BrotliEncoderCompress/BrotliDecoderDecompress). Set
+# -DNSW_STATIC_BROTLI=OFF to fall back to the previous behaviour of
+# resolving the codecs at runtime via PR_LoadLibrary.
+option(NSW_STATIC_BROTLI "Statically link brotli into the wrapper" ON)
+if (NSW_STATIC_BROTLI)
+    set(BROTLI_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../brotli")
+    # Bundle brotli as static libraries only: no CLI tool, no tests and no
+    # install rules (brotli switches to bundled mode automatically because
+    # it is added via add_subdirectory, but be explicit about the rest).
+    set(BUILD_SHARED_LIBS OFF)
+    set(BROTLI_BUILD_TOOLS OFF)
+    set(BROTLI_DISABLE_TESTS TRUE)
+    add_subdirectory("${BROTLI_SRC_DIR}" brotli_build EXCLUDE_FROM_ALL)
+    # Hide brotli's symbols in the shared wrapper so they cannot interpose
+    # with (or be interposed by) a system libbrotli loaded into the process.
+    if (NOT MSVC)
+        foreach(_brotli_lib brotlicommon brotlidec brotlienc)
+            target_compile_options(${_brotli_lib} PRIVATE -fvisibility=hidden)
+        endforeach()
+    endif()
+endif()
+
 # NSS and NSPR: prefer pkg-config (libnss3-dev / libnspr4-dev install
 # nss.pc and nspr.pc), fall back to plain header/library discovery, and
 # allow explicit overrides for custom prefixes:
@@ -93,6 +119,14 @@ target_include_directories(proxymap_nss PRIVATE
     ${NSS_INCLUDE_DIRS})
 
 target_link_libraries(proxymap_nss PRIVATE ${NSS_LIBRARIES} zlib_static)
+
+if (NSW_STATIC_BROTLI)
+    target_compile_definitions(proxymap_nss PRIVATE NSW_BROTLI_STATIC=1)
+    target_include_directories(proxymap_nss PRIVATE
+        "${BROTLI_SRC_DIR}/c/include")
+    # brotlienc/brotlidec pull in brotlicommon (and libm where needed).
+    target_link_libraries(proxymap_nss PRIVATE brotlienc brotlidec)
+endif()
 
 target_compile_features(proxymap_nss PRIVATE c_std_11)
 

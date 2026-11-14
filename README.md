@@ -78,11 +78,13 @@ silently ignored:
   the Firefox order zlib(1), brotli(2), zstd(3) via
   `SSL_SetCertificateCompressionAlgorithm` (requires NSS 3.101+ with that
   experimental API). zlib is statically linked from the vendored sources
-  NSS ships in nss/lib/zlib; the brotli and zstd codecs
-  are resolved at runtime from the system libraries
-  (`libbrotlienc`/`libbrotlidec`/`libzstd`, or `brotlienc.dll`/`brotlidec.dll`/
-  `libzstd.dll` on Windows) — no extra build dependency. Silently skipped
-  when the API or a codec is unavailable;
+  NSS ships in nss/lib/zlib, brotli is statically linked from the vendored
+  sources in `brotli/`. The zstd codec (a separate library — not zlib) is
+  loaded at runtime from the system library (`libzstd.so.1`, or
+  `libzstd.dll` on Windows): it is an optional runtime dependency — if the
+  library cannot be loaded, the zstd algorithm is simply not advertised,
+  while zlib and brotli keep working. Silently skipped when the API or a
+  codec is unavailable;
 - ML-DSA signature algorithms (`ML-DSA-44/65/87`) are skipped unless the
   linked NSS version supports them;
 - the X25519MLKEM768 named group is skipped on NSS versions without ML-KEM
