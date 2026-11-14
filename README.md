@@ -226,11 +226,15 @@ cd Native
 ./build.sh
 ```
 
-On Linux (including WSL) this produces `build/libproxymap_nss.so`; on macOS —
-`build/libproxymap_nss.dylib`. The wrapper is a thin C file (`nss_wrapper.c`)
-that links against the system `libssl3`/`libnss3`/`libnspr4` on Linux and
-against the Homebrew NSS/NSPR libraries on macOS (found via pkg-config or
-the default `/opt/homebrew` / `/usr/local` prefixes).
+On Linux (including WSL) this produces `build/linux-x64/libproxymap_nss.so`;
+on macOS — `build/osx-arm64/libproxymap_nss.dylib`. The RID is auto-detected
+from the host system (Linux → `linux-x64`/`linux-arm64`, macOS →
+`osx-arm64`/`osx-x64`) and can be forced explicitly (`./build.sh osx-x64`),
+so native artifacts of different platforms can be built into the same
+repository without overwriting each other. The wrapper is a thin C file
+(`nss_wrapper.c`) that links against the system `libssl3`/`libnss3`/`libnspr4`
+on Linux and against the Homebrew NSS/NSPR libraries on macOS (found via
+pkg-config or the default `/opt/homebrew` / `/usr/local` prefixes).
 
 #### Windows
 
@@ -335,7 +339,8 @@ cd Native
 The script finds the NSS/NSPR files under `..\dist` automatically (Release
 is preferred over Debug; explicit paths can still be passed with
 `-NssIncludeDir / -NssLibraryDir / -NsprIncludeDir / -NsprLibraryDir`).
-It produces `build\Release\proxymap_nss.dll`.
+It produces `build\win-x64\Release\proxymap_nss.dll` (the RID defaults to
+`win-x64` and can be overridden with `-Rid`).
 
 **4. Runtime DLLs.** No manual copying is needed: `NssStream.csproj` picks
 up `nspr4.dll`, `nss3.dll`, `ssl3.dll`, `nssutil3.dll`, `plc4.dll`,

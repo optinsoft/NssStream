@@ -12,12 +12,20 @@
 #
 #   .\build.ps1 -NssIncludeDir "C:\nss\dist\public\nss" ...
 #
+# The result is placed into build\<Rid> (proxymap_nss.dll ends up in
+# build\<Rid>\Release because of the Visual Studio generator) so that native
+# artifacts of different platforms can live side by side in the repository
+# without overwriting each other. The default RID is win-x64:
+#
+#   .\build.ps1 [-Rid win-x64]
+#
 # At runtime the process must be able to load the NSS/NSPR DLLs
 # (nss3.dll, ssl3.dll, smime3.dll, nssutil3.dll, freebl3.dll, softokn3.dll,
 # libnspr4.dll, libplc4.dll, libplds4.dll) — place them next to
 # proxymap_nss.dll or make them reachable via PATH.
 
 param(
+    [string]$Rid = "win-x64",
     [string]$NssIncludeDir = "",
     [string]$NssLibraryDir = "",
     [string]$NsprIncludeDir = "",
@@ -79,6 +87,7 @@ foreach ($d in @($NssIncludeDir, $NsprIncludeDir, $NssLibraryDir))
 if ($NssIncludeDir)   { Write-Host "NSS  headers: $NssIncludeDir" }
 if ($NsprIncludeDir)  { Write-Host "NSPR headers: $NsprIncludeDir" }
 if ($NssLibraryDir)   { Write-Host "Libraries:    $NssLibraryDir" }
+Write-Host "RID:          $Rid"
 if (-not ($NssIncludeDir -and $NsprIncludeDir -and $NssLibraryDir))
 {
     Write-Warning "NSS/NSPR development files were not found in $dist."
@@ -93,10 +102,11 @@ if ($NssLibraryDir)   { $cmakeArgs += "-DNSS_LIBRARY_DIR=$NssLibraryDir" }
 if ($NsprIncludeDir)  { $cmakeArgs += "-DNSPR_INCLUDE_DIR=$NsprIncludeDir" }
 if ($NsprLibraryDir)  { $cmakeArgs += "-DNSPR_LIBRARY_DIR=$NsprLibraryDir" }
 
-if (Test-Path build) { Remove-Item -Recurse -Force build }
+$buildDir = Join-Path "build" $Rid
+if (Test-Path $buildDir) { Remove-Item -Recurse -Force $buildDir }
 
-cmake -G "Visual Studio 17 2022" -A x64 -B build $cmakeArgs
+cmake -G "Visual Studio 17 2022" -A x64 -B $buildDir $cmakeArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-cmake --build build --config Release
+cmake --build $buildDir --config Release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
