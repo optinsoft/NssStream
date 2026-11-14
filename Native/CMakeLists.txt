@@ -57,6 +57,42 @@ if (NSW_STATIC_BROTLI)
     endif()
 endif()
 
+# zstd: same approach — statically linked from the vendored sources in
+# ../zstd so the wrapper has no runtime dependency on libzstd
+# (libzstd.dll on Windows). Only the entry points the wrapper needs are
+# exercised (ZSTD_compress/ZSTD_decompress/ZSTD_isError). Set
+# -DNSW_STATIC_ZSTD=OFF to fall back to the previous behaviour of
+# resolving the codec at runtime via PR_LoadLibrary.
+option(NSW_STATIC_ZSTD "Statically link zstd into the wrapper" ON)
+if (NSW_STATIC_ZSTD)
+    set(ZSTD_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../zstd")
+    # Static library only: no CLI, no tests, no contrib, and single-threaded
+    # (the wrapper compresses/decompresses on the TLS thread only).
+    # zstd's build requires cmake >= 3.10, so its option() calls run under
+    # the OLD CMP0077 policy and would overwrite plain set() values from
+    # this scope — everything therefore has to be forced into the cache.
+    set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+    set(ZSTD_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(ZSTD_BUILD_CONTRIB OFF CACHE BOOL "" FORCE)
+    set(ZSTD_BUILD_STATIC ON CACHE BOOL "" FORCE)
+    set(ZSTD_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+    set(ZSTD_MULTITHREAD_SUPPORT OFF CACHE BOOL "" FORCE)
+    # zstd.h hard-codes "default" visibility for its public API on GCC/
+    # Clang; route everything through zstd's own visibility knobs so the
+    # symbols end up hidden in the shared wrapper (see below).
+    set(ZSTDLIB_VISIBLE hidden CACHE STRING "" FORCE)
+    set(ZSTDERRORLIB_VISIBLE hidden CACHE STRING "" FORCE)
+    set(ZDICTLIB_VISIBLE hidden CACHE STRING "" FORCE)
+    set(ZSTDLIB_STATIC_API hidden CACHE STRING "" FORCE)
+    set(ZDICTLIB_STATIC_API hidden CACHE STRING "" FORCE)
+    add_subdirectory("${ZSTD_SRC_DIR}/build/cmake" zstd_build EXCLUDE_FROM_ALL)
+    # Hide zstd's symbols in the shared wrapper so they cannot interpose
+    # with (or be interposed by) a system libzstd loaded into the process.
+    if (NOT MSVC)
+        target_compile_options(libzstd_static PRIVATE -fvisibility=hidden)
+    endif()
+endif()
+
 # NSS and NSPR: prefer pkg-config (libnss3-dev / libnspr4-dev install
 # nss.pc and nspr.pc), fall back to plain header/library discovery, and
 # allow explicit overrides for custom prefixes:
@@ -126,6 +162,12 @@ if (NSW_STATIC_BROTLI)
         "${BROTLI_SRC_DIR}/c/include")
     # brotlienc/brotlidec pull in brotlicommon (and libm where needed).
     target_link_libraries(proxymap_nss PRIVATE brotlienc brotlidec)
+endif()
+
+if (NSW_STATIC_ZSTD)
+    target_compile_definitions(proxymap_nss PRIVATE NSW_ZSTD_STATIC=1)
+    target_include_directories(proxymap_nss PRIVATE "${ZSTD_SRC_DIR}/lib")
+    target_link_libraries(proxymap_nss PRIVATE libzstd_static)
 endif()
 
 target_compile_features(proxymap_nss PRIVATE c_std_11)

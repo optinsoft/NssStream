@@ -585,9 +585,9 @@ static SECStatus PR_CALLBACK nsw_auth_certificate_hook(
 /* vendored sources NSS ships in nss/lib/zlib, brotli is statically     */
 /* linked from the vendored sources in ../brotli (pass                  */
 /* -DNSW_STATIC_BROTLI=OFF to CMake to resolve brotli at runtime        */
-/* instead); zstd is resolved at runtime from the system library        */
-/* (libzstd), so no extra runtime dependency is introduced. Algorithms  */
-/* whose codec is unavailable are simply not advertised. NSS sends the  */
+/* instead) and zstd is statically linked from the vendored sources in  */
+/* ../zstd (pass -DNSW_STATIC_ZSTD=OFF the same way). Algorithms whose  */
+/* codec is unavailable are simply not advertised. NSS sends the        */
 /* registered algorithms in registration order, so the three codecs     */
 /* are registered in the Firefox order zlib(1), brotli(2), zstd(3).     */
 /*                                                                      */
@@ -772,7 +772,10 @@ static SECStatus nsw_brotli_decode(
 }
 
 /* ------------------------------------------------------------------ */
-/* Runtime-loaded zstd codec (RFC 8879 algorithm id 3).                 */
+/* zstd codec (RFC 8879 algorithm id 3).                                 */
+/* Statically linked from the vendored ../zstd sources by default        */
+/* (NSW_ZSTD_STATIC); with -DNSW_STATIC_ZSTD=OFF the entry points        */
+/* are resolved at runtime via PR_LoadLibrary instead.                   */
 /* ------------------------------------------------------------------ */
 
 #define NSW_ZSTD_DEFAULT_CLEVEL 3
@@ -783,9 +786,23 @@ typedef size_t (*NswZstdDecompressFn)(
     void* dst, size_t dstCap, const void* src, size_t srcSize);
 typedef unsigned (*NswZstdIsErrorFn)(size_t code);
 
+#ifdef NSW_ZSTD_STATIC
+
+#include <zstd.h>
+
+/* The real public header provides the prototypes, so the actual entry
+ * points are wired up at compile time (const pointers, never NULL). */
+static const NswZstdCompressFn nsw_zstd_compress = ZSTD_compress;
+static const NswZstdDecompressFn nsw_zstd_decompress = ZSTD_decompress;
+static const NswZstdIsErrorFn nsw_zstd_is_error = ZSTD_isError;
+
+#else /* !NSW_ZSTD_STATIC */
+
 static NswZstdCompressFn nsw_zstd_compress;
 static NswZstdDecompressFn nsw_zstd_decompress;
 static NswZstdIsErrorFn nsw_zstd_is_error;
+
+#endif /* NSW_ZSTD_STATIC */
 
 static SECStatus nsw_zstd_encode(const SECItem* input, SECItem* output)
 {
@@ -854,6 +871,7 @@ static SECStatus nsw_zstd_decode(
 static PRBool nsw_brotli_loaded = PR_FALSE;
 static PRBool nsw_zstd_loaded = PR_FALSE;
 
+#if !defined(NSW_BROTLI_STATIC) || !defined(NSW_ZSTD_STATIC)
 static PRBool nsw_load_codec_symbol(
     const char* libraryName, const char* symbol, void** fn)
 {
@@ -866,6 +884,7 @@ static PRBool nsw_load_codec_symbol(
     *fn = (void*)PR_FindFunctionSymbol(library, symbol);
     return *fn != NULL;
 }
+#endif
 
 static PRStatus nsw_load_compression_codecs(void)
 {
@@ -893,6 +912,11 @@ static PRStatus nsw_load_compression_codecs(void)
     }
 #endif /* NSW_BROTLI_STATIC */
 
+#ifdef NSW_ZSTD_STATIC
+    /* zstd is statically linked and wired up at compile time; the
+     * codec entry points are always available. */
+    nsw_zstd_loaded = PR_TRUE;
+#else /* !NSW_ZSTD_STATIC */
 #ifdef _WIN32
     static const char zstdLib[] = "libzstd.dll";
 #else
@@ -908,6 +932,7 @@ static PRStatus nsw_load_compression_codecs(void)
     {
         nsw_zstd_loaded = PR_TRUE;
     }
+#endif /* NSW_ZSTD_STATIC */
 
     return PR_SUCCESS;
 }
