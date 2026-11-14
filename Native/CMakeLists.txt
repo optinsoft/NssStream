@@ -79,12 +79,17 @@ if (NSW_STATIC_ZSTD)
     set(ZSTD_MULTITHREAD_SUPPORT OFF CACHE BOOL "" FORCE)
     # zstd.h hard-codes "default" visibility for its public API on GCC/
     # Clang; route everything through zstd's own visibility knobs so the
-    # symbols end up hidden in the shared wrapper (see below).
-    set(ZSTDLIB_VISIBLE hidden CACHE STRING "" FORCE)
-    set(ZSTDERRORLIB_VISIBLE hidden CACHE STRING "" FORCE)
-    set(ZDICTLIB_VISIBLE hidden CACHE STRING "" FORCE)
-    set(ZSTDLIB_STATIC_API hidden CACHE STRING "" FORCE)
-    set(ZDICTLIB_STATIC_API hidden CACHE STRING "" FORCE)
+    # symbols end up hidden in the shared wrapper. MSVC has no visibility
+    # attributes (the __attribute__ syntax would not even parse), but it
+    # does not need them: static-lib symbols are not exported from the
+    # wrapper DLL unless explicitly exported.
+    if (NOT MSVC)
+        set(ZSTDLIB_VISIBLE hidden CACHE STRING "" FORCE)
+        set(ZSTDERRORLIB_VISIBLE hidden CACHE STRING "" FORCE)
+        set(ZDICTLIB_VISIBLE hidden CACHE STRING "" FORCE)
+        set(ZSTDLIB_STATIC_API hidden CACHE STRING "" FORCE)
+        set(ZDICTLIB_STATIC_API hidden CACHE STRING "" FORCE)
+    endif()
     add_subdirectory("${ZSTD_SRC_DIR}/build/cmake" zstd_build EXCLUDE_FROM_ALL)
     # Hide zstd's symbols in the shared wrapper so they cannot interpose
     # with (or be interposed by) a system libzstd loaded into the process.
