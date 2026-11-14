@@ -12,13 +12,18 @@ const string host = "tls.peet.ws";
 //const string host = "untrusted-root.badssl.com";
 //const string host = "revoked.badssl.com";
 const string document = "/api/tls";
-const int port = 443;
+int port = args.Length > 1 ? int.Parse(args[1]) : 443;
 
 using var client = new TcpClient();
 
-Console.WriteLine($"Connecting to {host}:{port}...");
+// args[0] (optional): address to connect to (IP or hostname). Useful when
+// the SNI name must differ from the connect address, e.g. for proxies or
+// DNS issues. The TLS handshake always uses `host` for SNI/validation.
+string connectAddress = args.Length > 0 ? args[0] : host;
 
-await client.ConnectAsync(host, port);
+Console.WriteLine($"Connecting to {connectAddress}:{port} (SNI: {host})...");
+
+await client.ConnectAsync(connectAddress, port);
 
 Console.WriteLine("TCP connected.");
 

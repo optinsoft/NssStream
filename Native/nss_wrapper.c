@@ -35,6 +35,7 @@
 #include <sslerr.h>
 #include <prerror.h>
 #include <prlock.h>
+#include <prlink.h>
 #include <cert.h>
 #include <secerr.h>
 #include <zlib.h>
@@ -580,10 +581,13 @@ static SECStatus PR_CALLBACK nsw_auth_certificate_hook(
 /* RFC 8879 certificate compression (the compress_certificate xtn)      */
 /*                                                                      */
 /* Firefox advertises the certificate_compression extension with        */
-/* zlib/brotli/zstd. This NSS build only ships zlib, so zlib is         */
-/* registered here: the extension is advertised either way (which is    */
-/* all JA4/JA3 look at) and the negotiated algorithm can then only be   */
-/* zlib, which the callbacks below implement for real.                  */
+/* zlib/brotli/zstd, in this order. zlib is linked directly (it is an   */
+/* NSS dependency anyway); brotli and zstd are resolved at runtime      */
+/* from the system libraries (libbrotlienc/libbrotlidec/libzstd), so    */
+/* no extra build dependency is introduced. Algorithms whose codec      */
+/* cannot be loaded are simply not advertised. NSS sends the            */
+/* registered algorithms in registration order, so the three codecs     */
+/* are registered in the Firefox order zlib(1), brotli(2), zstd(3).     */
 /*                                                                      */
 /* The public SSLCertificateCompressionAlgorithm type was renamed       */
 /* between NSS releases (SSLCertificateCompressionAlgorithmType in      */
@@ -663,9 +667,223 @@ typedef struct NswCertCompressionAlgorithmStr
         size_t* usedLen);
 } NswCertCompressionAlgorithm;
 
-/* Registers the zlib certificate compression algorithm. Returns
- * PR_TRUE when the running NSS supports RFC 8879 (older versions like
- * 3.98 lack the experimental API, in which case the
+/* ------------------------------------------------------------------ */
+/* Runtime-loaded brotli codec (RFC 8879 algorithm id 2).               */
+/* ------------------------------------------------------------------ */
+
+#define NSW_BROTLI_DEFAULT_QUALITY       11
+#define NSW_BROTLI_DEFAULT_WINDOW        22
+#define NSW_BROTLI_MODE_GENERIC          0
+#define NSW_BROTLI_DECODER_RESULT_SUCCESS 1
+
+typedef size_t (*NswBrotliEncoderCompressFn)(
+    int quality, int lgwin, int mode,
+    size_t inputSize, const uint8_t* input,
+    size_t* encodedSize, uint8_t* encoded);
+typedef int (*NswBrotliDecoderDecompressFn)(
+    size_t encodedSize, const uint8_t* encoded,
+    size_t* decodedSize, uint8_t* decoded);
+
+static NswBrotliEncoderCompressFn nsw_brotli_compress;
+static NswBrotliDecoderDecompressFn nsw_brotli_decompress;
+
+static SECStatus nsw_brotli_encode(const SECItem* input, SECItem* output)
+{
+    size_t encodedLen;
+    PRUint8* data;
+
+    if (!input || !input->data || !output || !nsw_brotli_compress)
+    {
+        return SECFailure;
+    }
+
+    /* BrotliEncoderMaxCompressedSize() is a static inline in the public
+     * header; use the same formula (input + input/2 + 1024) directly. */
+    encodedLen = (size_t)input->len + (size_t)input->len / 2 + 1024;
+    data = (PRUint8*)PORT_Alloc(encodedLen);
+    if (!data)
+    {
+        PORT_SetError(SEC_ERROR_NO_MEMORY);
+        return SECFailure;
+    }
+
+    if (!nsw_brotli_compress(
+            NSW_BROTLI_DEFAULT_QUALITY, NSW_BROTLI_DEFAULT_WINDOW,
+            NSW_BROTLI_MODE_GENERIC, (size_t)input->len, input->data,
+            &encodedLen, data))
+    {
+        PORT_Free(data);
+        PORT_SetError(SEC_ERROR_IO);
+        return SECFailure;
+    }
+
+    output->type = siBuffer;
+    output->data = data;
+    output->len = (unsigned int)encodedLen;
+    return SECSuccess;
+}
+
+static SECStatus nsw_brotli_decode(
+    const SECItem* input, unsigned char* output, size_t outputLen,
+    size_t* usedLen)
+{
+    size_t decodedLen;
+
+    if (!input || !input->data || !output || !usedLen || outputLen == 0 ||
+        !nsw_brotli_decompress)
+    {
+        return SECFailure;
+    }
+
+    decodedLen = outputLen;
+    if (nsw_brotli_decompress(
+            (size_t)input->len, input->data, &decodedLen, output) !=
+        NSW_BROTLI_DECODER_RESULT_SUCCESS)
+    {
+        return SECFailure;
+    }
+
+    *usedLen = decodedLen;
+    return SECSuccess;
+}
+
+/* ------------------------------------------------------------------ */
+/* Runtime-loaded zstd codec (RFC 8879 algorithm id 3).                 */
+/* ------------------------------------------------------------------ */
+
+#define NSW_ZSTD_DEFAULT_CLEVEL 3
+
+typedef size_t (*NswZstdCompressFn)(
+    void* dst, size_t dstCap, const void* src, size_t srcSize, int level);
+typedef size_t (*NswZstdDecompressFn)(
+    void* dst, size_t dstCap, const void* src, size_t srcSize);
+typedef unsigned (*NswZstdIsErrorFn)(size_t code);
+
+static NswZstdCompressFn nsw_zstd_compress;
+static NswZstdDecompressFn nsw_zstd_decompress;
+static NswZstdIsErrorFn nsw_zstd_is_error;
+
+static SECStatus nsw_zstd_encode(const SECItem* input, SECItem* output)
+{
+    size_t encodedLen;
+    PRUint8* data;
+
+    if (!input || !input->data || !output || !nsw_zstd_compress ||
+        !nsw_zstd_is_error)
+    {
+        return SECFailure;
+    }
+
+    /* ZSTD_COMPRESSBOUND(input) = input + input/8 + 128 (plus a small
+     * safety margin, the formula is a static inline in zstd.h). */
+    encodedLen = (size_t)input->len + (size_t)input->len / 8 + 512;
+    data = (PRUint8*)PORT_Alloc(encodedLen);
+    if (!data)
+    {
+        PORT_SetError(SEC_ERROR_NO_MEMORY);
+        return SECFailure;
+    }
+
+    encodedLen = nsw_zstd_compress(
+        data, encodedLen, input->data, (size_t)input->len,
+        NSW_ZSTD_DEFAULT_CLEVEL);
+    if (nsw_zstd_is_error(encodedLen))
+    {
+        PORT_Free(data);
+        PORT_SetError(SEC_ERROR_IO);
+        return SECFailure;
+    }
+
+    output->type = siBuffer;
+    output->data = data;
+    output->len = (unsigned int)encodedLen;
+    return SECSuccess;
+}
+
+static SECStatus nsw_zstd_decode(
+    const SECItem* input, unsigned char* output, size_t outputLen,
+    size_t* usedLen)
+{
+    size_t decodedLen;
+
+    if (!input || !input->data || !output || !usedLen || outputLen == 0 ||
+        !nsw_zstd_decompress || !nsw_zstd_is_error)
+    {
+        return SECFailure;
+    }
+
+    decodedLen = nsw_zstd_decompress(
+        output, outputLen, input->data, (size_t)input->len);
+    if (nsw_zstd_is_error(decodedLen))
+    {
+        return SECFailure;
+    }
+
+    *usedLen = decodedLen;
+    return SECSuccess;
+}
+
+/* ------------------------------------------------------------------ */
+/* One-time codec loading (thread-safe via PR_CallOnce).                */
+/* ------------------------------------------------------------------ */
+
+static PRBool nsw_brotli_loaded = PR_FALSE;
+static PRBool nsw_zstd_loaded = PR_FALSE;
+
+static PRBool nsw_load_codec_symbol(
+    const char* libraryName, const char* symbol, void** fn)
+{
+    PRLibrary* library = PR_LoadLibrary(libraryName);
+    if (!library)
+    {
+        return PR_FALSE;
+    }
+
+    *fn = (void*)PR_FindFunctionSymbol(library, symbol);
+    return *fn != NULL;
+}
+
+static PRStatus nsw_load_compression_codecs(void)
+{
+#ifdef _WIN32
+    static const char brotliEncLib[] = "brotlienc.dll";
+    static const char brotliDecLib[] = "brotlidec.dll";
+    static const char zstdLib[] = "libzstd.dll";
+#else
+    static const char brotliEncLib[] = "libbrotlienc.so.1";
+    static const char brotliDecLib[] = "libbrotlidec.so.1";
+    static const char zstdLib[] = "libzstd.so.1";
+#endif
+
+    if (nsw_load_codec_symbol(
+            brotliEncLib, "BrotliEncoderCompress",
+            (void**)&nsw_brotli_compress) &&
+        nsw_load_codec_symbol(
+            brotliDecLib, "BrotliDecoderDecompress",
+            (void**)&nsw_brotli_decompress))
+    {
+        nsw_brotli_loaded = PR_TRUE;
+    }
+
+    if (nsw_load_codec_symbol(
+            zstdLib, "ZSTD_compress", (void**)&nsw_zstd_compress) &&
+        nsw_load_codec_symbol(
+            zstdLib, "ZSTD_decompress", (void**)&nsw_zstd_decompress) &&
+        nsw_load_codec_symbol(
+            zstdLib, "ZSTD_isError", (void**)&nsw_zstd_is_error))
+    {
+        nsw_zstd_loaded = PR_TRUE;
+    }
+
+    return PR_SUCCESS;
+}
+
+static PRCallOnceType nsw_codec_load_once;
+
+/* Registers the certificate compression algorithms in the Firefox order
+ * zlib(1), brotli(2), zstd(3). Returns PR_TRUE when at least the zlib
+ * algorithm was registered (older NSS versions without the experimental
+ * API support no registration at all, in which case the
  * compress_certificate extension is simply not sent). */
 static PRBool nsw_enable_cert_compression(PRFileDesc* fd)
 {
@@ -674,6 +892,18 @@ static PRBool nsw_enable_cert_compression(PRFileDesc* fd)
         "zlib",
         nsw_zlib_encode,
         nsw_zlib_decode
+    };
+    static const NswCertCompressionAlgorithm brotliAlg = {
+        2,               /* brotli */
+        "brotli",
+        nsw_brotli_encode,
+        nsw_brotli_decode
+    };
+    static const NswCertCompressionAlgorithm zstdAlg = {
+        3,               /* zstd */
+        "zstd",
+        nsw_zstd_encode,
+        nsw_zstd_decode
     };
 
     typedef SECStatus (*SetCertCompressionFn)(
@@ -686,9 +916,20 @@ static PRBool nsw_enable_cert_compression(PRFileDesc* fd)
         return PR_FALSE;
     }
 
-    return ((SetCertCompressionFn)api)(fd, zlibAlg) == SECSuccess
-        ? PR_TRUE
-        : PR_FALSE;
+    PR_CallOnce(&nsw_codec_load_once, nsw_load_compression_codecs);
+
+    SetCertCompressionFn setAlg = (SetCertCompressionFn)api;
+
+    PRBool ok = setAlg(fd, zlibAlg) == SECSuccess;
+    if (nsw_brotli_loaded)
+    {
+        ok = setAlg(fd, brotliAlg) == SECSuccess && ok;
+    }
+    if (nsw_zstd_loaded)
+    {
+        ok = setAlg(fd, zstdAlg) == SECSuccess && ok;
+    }
+    return ok;
 }
 
 /* ------------------------------------------------------------------ */
@@ -930,6 +1171,65 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
             if (SSL_CipherPrefSet(fd, cipher, enable) != SECSuccess)
             {
                 SetLastErrorF("SSL_CipherPrefSet failed", PR_GetError());
+                PR_Close(fd);
+                return NULL;
+            }
+        }
+
+        /* Firefox sends the enabled suites in its own order, which for
+         * some suites differs from the fixed order of NSS's
+         * SSL_ImplementedCiphers list (sslenum.c): Firefox offers
+         * TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA (0xC00A) before
+         * TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA (0xC013), while NSS's
+         * default order does not. SSL_CipherPrefSet only enables or
+         * disables suites; the experimental SSL_CipherSuiteOrderSet API
+         * (NSS 3.87+) restores the order given in the cipher list.
+         * TLS 1.3 suites are not part of the cipher list (like in the
+         * BoringSSL wrapper, they are negotiated independently), so they
+         * keep their default position in front. */
+        typedef SECStatus (*NswCipherSuiteOrderSetFn)(
+            PRFileDesc*, const PRUint16*, PRUint16);
+
+        void* orderApi = SSL_GetExperimentalAPI(
+            "SSL_CipherSuiteOrderSet");
+        if (orderApi)
+        {
+            PRUint16 order[128];
+            unsigned orderCount = 0;
+            const PRUint16* implemented = SSL_GetImplementedCiphers();
+            PRUint16 implCount = SSL_GetNumImplementedCiphers();
+            unsigned maxOrder = sizeof(order) / sizeof(order[0]);
+
+            /* TLS 1.3 suites first, in the NSS default order. */
+            for (PRUint16 i = 0; i < implCount && orderCount < maxOrder; ++i)
+            {
+                if (implemented[i] >= 0x1300 && implemented[i] <= 0x13FF)
+                    order[orderCount++] = implemented[i];
+            }
+
+            /* Then the cipher-list suites in cipher-list order (skip
+             * duplicates of the TLS 1.3 codes added above). */
+            for (unsigned j = 0; j < requestedCount && orderCount < maxOrder; ++j)
+            {
+                PRBool seen = PR_FALSE;
+
+                for (unsigned k = 0; k < orderCount; ++k)
+                {
+                    if (order[k] == requested[j])
+                    {
+                        seen = PR_TRUE;
+                        break;
+                    }
+                }
+
+                if (!seen)
+                    order[orderCount++] = requested[j];
+            }
+
+            if (((NswCipherSuiteOrderSetFn)orderApi)(
+                    fd, order, (PRUint16)orderCount) != SECSuccess)
+            {
+                SetLastErrorF("SSL_CipherSuiteOrderSet failed", PR_GetError());
                 PR_Close(fd);
                 return NULL;
             }

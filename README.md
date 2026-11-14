@@ -74,11 +74,14 @@ silently ignored:
 - `trustAnchors` — the BoringSSL `requested_trust_anchors` extension;
 - `enableEchGrease` — requires the experimental `SSL_EnableTls13GreaseEch`
   API (NSS 3.68+); silently skipped on older NSS;
-- `enableBrotli` — registers RFC 8879 certificate compression for zlib via
-  `SSL_SetCertificateCompressionAlgorithm` (requires NSS with that
-  experimental API and a zlib build dependency); silently skipped when
-  unavailable — the advertised algorithm list is zlib only (JA4/JA3 hash
-  extension types, not their contents);
+- `enableBrotli` — registers RFC 8879 certificate compression algorithms in
+  the Firefox order zlib(1), brotli(2), zstd(3) via
+  `SSL_SetCertificateCompressionAlgorithm` (requires NSS 3.101+ with that
+  experimental API). zlib is linked directly; the brotli and zstd codecs
+  are resolved at runtime from the system libraries
+  (`libbrotlienc`/`libbrotlidec`/`libzstd`, or `brotlienc.dll`/`brotlidec.dll`/
+  `libzstd.dll` on Windows) — no extra build dependency. Silently skipped
+  when the API or a codec is unavailable;
 - ML-DSA signature algorithms (`ML-DSA-44/65/87`) are skipped unless the
   linked NSS version supports them;
 - the X25519MLKEM768 named group is skipped on NSS versions without ML-KEM
