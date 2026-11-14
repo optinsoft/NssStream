@@ -581,9 +581,10 @@ static SECStatus PR_CALLBACK nsw_auth_certificate_hook(
 /* RFC 8879 certificate compression (the compress_certificate xtn)      */
 /*                                                                      */
 /* Firefox advertises the certificate_compression extension with        */
-/* zlib/brotli/zstd, in this order. zlib is linked directly (it is an   */
-/* NSS dependency anyway); brotli and zstd are resolved at runtime      */
-/* from the system libraries (libbrotlienc/libbrotlidec/libzstd), so    */
+/* zlib/brotli/zstd, in this order. zlib is statically linked from the  */
+/* vendored sources NSS ships in nss/lib/zlib; brotli and zstd are       */
+/* resolved at runtime from the system libraries                         */
+/* (libbrotlienc/libbrotlidec/libzstd), so no extra build dependency is  */
 /* no extra build dependency is introduced. Algorithms whose codec      */
 /* cannot be loaded are simply not advertised. NSS sends the            */
 /* registered algorithms in registration order, so the three codecs     */

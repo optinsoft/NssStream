@@ -3,15 +3,39 @@ project(proxymap_nss C)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# zlib: used for the RFC 8879 certificate compression callbacks (the
-# compress_certificate extension advertises zlib).
+# zlib: statically linked from the vendored sources NSS itself ships in
+# nss/lib/zlib (the same copy NSS links into nss3). Building it here removes
+# the runtime dependency on zlib1.dll / libz.so.1. Only the codecs the
+# wrapper needs are compiled (compress/uncompress); gz* file-I/O sources are
+# skipped. Note: this vendored copy relies on the standard headers (NULL,
+# stdio), so Z_SOLO must NOT be defined.
+set(ZLIB_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../nss/lib/zlib")
+set(ZLIB_SOURCES
+    "${ZLIB_SRC_DIR}/adler32.c"
+    "${ZLIB_SRC_DIR}/compress.c"
+    "${ZLIB_SRC_DIR}/crc32.c"
+    "${ZLIB_SRC_DIR}/deflate.c"
+    "${ZLIB_SRC_DIR}/inffast.c"
+    "${ZLIB_SRC_DIR}/inflate.c"
+    "${ZLIB_SRC_DIR}/inftrees.c"
+    "${ZLIB_SRC_DIR}/trees.c"
+    "${ZLIB_SRC_DIR}/uncompr.c"
+    "${ZLIB_SRC_DIR}/zutil.c")
+add_library(zlib_static STATIC ${ZLIB_SOURCES})
+target_include_directories(zlib_static PUBLIC "${ZLIB_SRC_DIR}")
+# Hide zlib's symbols in the shared wrapper so they cannot interpose with
+# (or be interposed by) the copy NSS links into nss3.dll / libnss3.so.
+if (NOT MSVC)
+    target_compile_options(zlib_static PRIVATE -fvisibility=hidden)
+endif()
+# Match NSS's own build (nss/lib/zlib/manifest.mn): silence the debug trace.
+target_compile_definitions(zlib_static PRIVATE verbose=-1)
 
 # NSS and NSPR: prefer pkg-config (libnss3-dev / libnspr4-dev install
 # nss.pc and nspr.pc), fall back to plain header/library discovery, and
 # allow explicit overrides for custom prefixes:
 #   cmake -DNSS_INCLUDE_DIR=/opt/nss/include/nss -DNSS_LIBRARY_DIR=/opt/nss/lib ...
 find_package(PkgConfig QUIET)
-find_package(ZLIB REQUIRED)
 if (PkgConfig_FOUND)
     set(ENV{PKG_CONFIG_PATH} "${NSS_LIBRARY_DIR}/pkgconfig:$ENV{PKG_CONFIG_PATH}")
     pkg_check_modules(NSS QUIET nss)
@@ -64,9 +88,11 @@ if(WIN32)
     set_target_properties(proxymap_nss PROPERTIES PREFIX "")
 endif()
 
-target_include_directories(proxymap_nss PRIVATE ${NSS_INCLUDE_DIRS})
+target_include_directories(proxymap_nss PRIVATE
+    "${ZLIB_SRC_DIR}"
+    ${NSS_INCLUDE_DIRS})
 
-target_link_libraries(proxymap_nss PRIVATE ${NSS_LIBRARIES} ZLIB::ZLIB)
+target_link_libraries(proxymap_nss PRIVATE ${NSS_LIBRARIES} zlib_static)
 
 target_compile_features(proxymap_nss PRIVATE c_std_11)
 

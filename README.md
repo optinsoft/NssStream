@@ -77,7 +77,8 @@ silently ignored:
 - `enableBrotli` — registers RFC 8879 certificate compression algorithms in
   the Firefox order zlib(1), brotli(2), zstd(3) via
   `SSL_SetCertificateCompressionAlgorithm` (requires NSS 3.101+ with that
-  experimental API). zlib is linked directly; the brotli and zstd codecs
+  experimental API). zlib is statically linked from the vendored sources
+  NSS ships in nss/lib/zlib; the brotli and zstd codecs
   are resolved at runtime from the system libraries
   (`libbrotlienc`/`libbrotlidec`/`libzstd`, or `brotlienc.dll`/`brotlidec.dll`/
   `libzstd.dll` on Windows) — no extra build dependency. Silently skipped
