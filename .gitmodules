@@ -4,3 +4,6 @@
 [submodule "nspr"]
 	path = nspr
 	url = https://github.com/mozilla/nspr.git
+[submodule "brotli"]
+	path = brotli
+	url = https://github.com/google/brotli.git
