@@ -10,7 +10,7 @@
 
     <!-- NuGet package metadata -->
     <PackageId>NssStream</PackageId>
-    <Version>1.0.4</Version>
+    <Version>1.0.5</Version>
     <Authors>Vitaly Yakovlev (optinsoft)</Authors>
     <Owners>optinsoft</Owners>
     <Copyright>Copyright © Vitaly Yakovlev, vitaly@optinsoft.net</Copyright>
@@ -34,16 +34,12 @@
          ProjectReference). When packed, NuGet places it under
          runtimes/{RID}/native/ so consumers get the right binary automatically. -->
     <None Include="../Native/build/win-x64/proxymap_nss.dll"
-          Link="proxymap_nss.dll"
-          CopyToOutputDirectory="PreserveNewest"
           Pack="true"
           PackagePath="runtimes/win-x64/native"
           Condition="Exists('../Native/build/win-x64/proxymap_nss.dll')" />
     <!-- The Visual Studio generator places the DLL into a Release
          subdirectory; accept both layouts. -->
     <None Include="../Native/build/win-x64/Release/proxymap_nss.dll"
-          Link="proxymap_nss.dll"
-          CopyToOutputDirectory="PreserveNewest"
           Pack="true"
           PackagePath="runtimes/win-x64/native"
           Condition="!Exists('../Native/build/win-x64/proxymap_nss.dll') AND Exists('../Native/build/win-x64/Release/proxymap_nss.dll')" />
@@ -79,9 +75,9 @@
     <None Include="../dist/Release/lib/freebl3.dll"
           Link="freebl3.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
           Condition="Exists('../dist/Release/lib/freebl3.dll')" />
-	<None Include="../dist/Release/lib/sqlite3.dll"
-		  Link="sqlite3.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
-		  Condition="Exists('../dist/Release/lib/sqlite3.dll')" />
+    <None Include="../dist/Release/lib/sqlite3.dll"
+	    Link="sqlite3.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
+	    Condition="Exists('../dist/Release/lib/sqlite3.dll')" />
 
     <None Include="../dist/Debug/lib/nspr4.dll"
           Link="nspr4.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
@@ -110,18 +106,19 @@
     <None Include="../dist/Debug/lib/sqlite3.dll"
           Link="sqlite3.dll" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="runtimes/win-x64/native"
           Condition="!Exists('../dist/Release/lib/sqlite3.dll') AND Exists('../dist/Debug/lib/sqlite3.dll')" />
+      
     <None Include="../Native/build/linux-x64/libproxymap_nss.so"
-          Link="libproxymap_nss.so"
-          CopyToOutputDirectory="PreserveNewest"
           Pack="true"
           PackagePath="runtimes/linux-x64/native"
           Condition="Exists('../Native/build/linux-x64/libproxymap_nss.so')" />
-    <None Include="../Native/build/$(MacNativeRuntimeIdentifier)/libproxymap_nss.dylib"
-          Link="libproxymap_nss.dylib"
-          CopyToOutputDirectory="PreserveNewest"
+    <None Include="../Native/build/linux-arm64/libproxymap_nss.so"
           Pack="true"
-          PackagePath="runtimes/$(MacNativeRuntimeIdentifier)/native"
-          Condition="Exists('../Native/build/$(MacNativeRuntimeIdentifier)/libproxymap_nss.dylib')" />
+          PackagePath="runtimes/linux-arm64/native"
+          Condition="Exists('../Native/build/linux-arm64/libproxymap_nss.so')" />
+    <None Include="../Native/build/osx-arm64/libproxymap_nss.dylib"
+          Pack="true"
+          PackagePath="runtimes/osx-arm64/native"
+          Condition="Exists('../Native/build/osx-arm64/libproxymap_nss.dylib')" />
   </ItemGroup>
 
   <ItemGroup>
@@ -129,11 +126,30 @@
     <None Include="../README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 
+  <PropertyGroup>
+	<_HostArch>$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)</_HostArch>
+	<_NativeRid Condition="$([MSBuild]::IsOSPlatform('Windows')) AND '$(_HostArch)' == 'X64'">win-x64</_NativeRid>
+	<_NativeRid Condition="$([MSBuild]::IsOSPlatform('Linux')) AND '$(_HostArch)' == 'X64'">linux-x64</_NativeRid>
+	<_NativeRid Condition="$([MSBuild]::IsOSPlatform('Linux')) AND '$(_HostArch)' == 'Arm64'">linux-arm64</_NativeRid>
+	<_NativeRid Condition="$([MSBuild]::IsOSPlatform('OSX')) AND '$(_HostArch)' == 'Arm64'">osx-arm64</_NativeRid>
+	<_NativeFile Condition="'$(_NativeRid)' == 'win-x64'">proxymap_nss.dll</_NativeFile>
+	<_NativeFile Condition="$(_NativeRid.StartsWith('linux-'))">libproxymap_nss.so</_NativeFile>
+	<_NativeFile Condition="$(_NativeRid.StartsWith('osx-'))">libproxymap_nss.dylib</_NativeFile>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(_NativeRid)' != '' AND Exists('../Native/build/$(_NativeRid)/$(_NativeFile)')">
+		<None Include="../Native/build/$(_NativeRid)/$(_NativeFile)"
+			  Link="$(_NativeFile)"
+			  CopyToOutputDirectory="PreserveNewest"
+			  Pack="false" />
+  </ItemGroup>
+
   <Target Name="EnsureNativeLibrary" BeforeTargets="Build"
           Condition="!Exists('../Native/build/win-x64/proxymap_nss.dll') AND
                      !Exists('../Native/build/win-x64/Release/proxymap_nss.dll') AND
                      !Exists('../Native/build/linux-x64/libproxymap_nss.so') AND
-                     !Exists('../Native/build/$(MacNativeRuntimeIdentifier)/libproxymap_nss.dylib')">
+                     !Exists('../Native/build/linux-arm64/libproxymap_nss.so') AND
+                     !Exists('../Native/build/osx-arm64/libproxymap_nss.dylib')">
     <Warning Text="Native library not found in ../Native/build/&lt;rid&gt;. Run Native/build.ps1 -Rid win-x64 (Windows), Native/build.sh (Linux/macOS, RID auto-detected) first." />
   </Target>
 
