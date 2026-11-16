@@ -203,7 +203,7 @@ public sealed class NssStreamTests
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
-        var certificate = CreateCertificate();
+        using var certificate = CreateCertificate();
 
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
