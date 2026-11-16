@@ -111,13 +111,13 @@ static void nsw_debug_init()
         g_debug_lock = PR_NewLock();
 }
 
-static void SetLastError(const char* message)
+static void nsw_set_last_error(const char* message)
 {
     snprintf(g_last_error, sizeof(g_last_error), "%s",
              message ? message : "Unknown error");
 }
 
-static void SetLastErrorF(const char* fmt, int error)
+static void nsw_set_last_error_f(const char* fmt, int error)
 {
     char text[256] = "";
 
@@ -152,13 +152,13 @@ static PRStatus PR_CALLBACK nsw_init_nss(void)
      * (SSL_VERIFY_NONE + managed validation). */
     if (NSS_NoDB_Init(".") != SECSuccess)
     {
-        SetLastErrorF("NSS_NoDB_Init failed", PR_GetError());
+        nsw_set_last_error_f("NSS_NoDB_Init failed", PR_GetError());
         return PR_FAILURE;
     }
 
     if (NSS_SetDomesticPolicy() != SECSuccess)
     {
-        SetLastErrorF("NSS_SetDomesticPolicy failed", PR_GetError());
+        nsw_set_last_error_f("NSS_SetDomesticPolicy failed", PR_GetError());
         return PR_FAILURE;
     }
 
@@ -167,11 +167,15 @@ static PRStatus PR_CALLBACK nsw_init_nss(void)
 
 static PRDescIdentity g_nsw_identity = PR_INVALID_IO_LAYER;
 
+static void nsw_init_methods(void);
+
 static PRStatus PR_CALLBACK nsw_init_layer_identity(void)
 {
     g_nsw_identity = PR_GetUniqueIdentity("proxymap-nss");
-
-    return g_nsw_identity == PR_INVALID_IO_LAYER ? PR_FAILURE : PR_SUCCESS;
+    if (g_nsw_identity == PR_INVALID_IO_LAYER)
+        return PR_FAILURE;
+    nsw_init_methods();
+    return PR_SUCCESS;
 }
 
 /* ------------------------------------------------------------------ */
@@ -993,6 +997,24 @@ static PRBool nsw_enable_cert_compression(PRFileDesc* fd)
 
 /* ------------------------------------------------------------------ */
 
+#ifdef _WIN32
+#include <windows.h>
+static INIT_ONCE g_global_once = INIT_ONCE_STATIC_INIT;
+
+static BOOL CALLBACK nsw_global_once(PINIT_ONCE o, PVOID p, PVOID* c)
+{
+    (void)o; (void)p; (void)c;
+    PR_Init(PR_USER_THREAD, PR_PRIORITY_NORMAL, 0); /* explicit NSPR initialization, single-threaded */
+    return TRUE;
+}
+#define NSW_ENSURE_NSPR() InitOnceExecuteOnce(&g_global_once, nsw_global_once, NULL, NULL)
+#else
+#include <pthread.h>
+static pthread_once_t g_global_once = PTHREAD_ONCE_INIT;
+static void nsw_global_once(void) { PR_Init(PR_USER_THREAD, PR_PRIORITY_NORMAL, 0); }
+#define NSW_ENSURE_NSPR() pthread_once(&g_global_once, nsw_global_once)
+#endif
+
 /* ------------------------------------------------------------------ */
 /* Exported API (identical to the BoringSSL wrapper)                    */
 /* ------------------------------------------------------------------ */
@@ -1015,19 +1037,21 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
 
     if (!hostname || !hostname[0])
     {
-        SetLastError("Hostname is empty");
+        nsw_set_last_error("Hostname is empty");
         return NULL;
     }
+
+    NSW_ENSURE_NSPR();
 
     if (PR_CallOnce(&g_nss_init_once, nsw_init_nss) != PR_SUCCESS)
         return NULL; /* g_last_error already set */
 
     nsw_debug_init();
 
-    if (PR_CallOnce(&g_layer_init_once, nsw_init_layer_identity) != PR_SUCCESS ||
-        g_nsw_methods.close == NULL)
+    if (PR_CallOnce(&g_layer_init_once, nsw_init_layer_identity) != PR_SUCCESS)
     {
-        nsw_init_methods();
+        nsw_set_last_error("NSS layer init failed");
+        return NULL;
     }
 
     PmsNssConnection* connection =
@@ -1035,7 +1059,7 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
 
     if (!connection)
     {
-        SetLastError("Out of memory");
+        nsw_set_last_error("Out of memory");
         return NULL;
     }
 
@@ -1043,7 +1067,7 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
 
     if (!connection->lock)
     {
-        SetLastError("PR_NewLock failed");
+        nsw_set_last_error("PR_NewLock failed");
         free(connection);
         return NULL;
     }
@@ -1053,7 +1077,7 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
     if (!connection->hostname)
     {
         PR_DestroyLock(connection->lock);
-        SetLastError("Out of memory");
+        nsw_set_last_error("Out of memory");
         free(connection);
         return NULL;
     }
@@ -1062,7 +1086,7 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
 
     if (!stub)
     {
-        SetLastErrorF("PR_CreateIOLayerStub failed", PR_GetError());
+        nsw_set_last_error_f("PR_CreateIOLayerStub failed", PR_GetError());
         PR_DestroyLock(connection->lock);
         free(connection->hostname);
         free(connection);
@@ -1078,7 +1102,7 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
 
     if (!fd)
     {
-        SetLastErrorF("SSL_ImportFD failed", PR_GetError());
+        nsw_set_last_error_f("SSL_ImportFD failed", PR_GetError());
         stub->dtor(stub);
         PR_DestroyLock(connection->lock);
         free(connection->hostname);
@@ -1097,7 +1121,7 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
 
     if (SSL_VersionRangeSet(fd, &versionRange) != SECSuccess)
     {
-        SetLastErrorF("SSL_VersionRangeSet failed", PR_GetError());
+        nsw_set_last_error_f("SSL_VersionRangeSet failed", PR_GetError());
         PR_Close(fd);
         return NULL;
     }
@@ -1126,7 +1150,7 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
         }
         if (rv != SECSuccess)
         {
-            SetLastErrorF("SSL_NamedGroupConfig failed", PR_GetError());
+            nsw_set_last_error_f("SSL_NamedGroupConfig failed", PR_GetError());
             PR_Close(fd);
             return NULL;
         }
@@ -1139,7 +1163,7 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
      * second ClientHello - match Firefox here. */
     if (SSL_SendAdditionalKeyShares(fd, 2) != SECSuccess)
     {
-        SetLastErrorF("SSL_SendAdditionalKeyShares failed", PR_GetError());
+        nsw_set_last_error_f("SSL_SendAdditionalKeyShares failed", PR_GetError());
         PR_Close(fd);
         return NULL;
     }
@@ -1148,7 +1172,7 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
     if (SSL_AuthCertificateHook(fd, nsw_auth_certificate_hook, NULL) !=
         SECSuccess)
     {
-        SetLastErrorF("SSL_AuthCertificateHook failed", PR_GetError());
+        nsw_set_last_error_f("SSL_AuthCertificateHook failed", PR_GetError());
         PR_Close(fd);
         return NULL;
     }
@@ -1197,7 +1221,7 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
 
         if (requestedCount == 0)
         {
-            SetLastError("SSL cipher list did not contain any "
+            nsw_set_last_error("SSL cipher list did not contain any "
                          "cipher suite supported by NSS");
             PR_Close(fd);
             return NULL;
@@ -1208,9 +1232,9 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
          * are negotiated independently of the cipher list in BoringSSL,
          * and disabling them would rule out TLS 1.3 entirely. */
         const PRUint16* implemented = SSL_GetImplementedCiphers();
-        PRUint16 count = SSL_GetNumImplementedCiphers();
+        PRUint16 implCount = SSL_GetNumImplementedCiphers();
 
-        for (PRUint16 i = 0; i < count; ++i)
+        for (PRUint16 i = 0; i < implCount; ++i)
         {
             PRUint16 cipher = implemented[i];
             PRBool enable = PR_FALSE;
@@ -1229,7 +1253,7 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
 
             if (SSL_CipherPrefSet(fd, cipher, enable) != SECSuccess)
             {
-                SetLastErrorF("SSL_CipherPrefSet failed", PR_GetError());
+                nsw_set_last_error_f("SSL_CipherPrefSet failed", PR_GetError());
                 PR_Close(fd);
                 return NULL;
             }
@@ -1255,8 +1279,8 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
         {
             PRUint16 order[128];
             unsigned orderCount = 0;
-            const PRUint16* implemented = SSL_GetImplementedCiphers();
-            PRUint16 implCount = SSL_GetNumImplementedCiphers();
+            //const PRUint16* implemented = SSL_GetImplementedCiphers();
+            //PRUint16 implCount = SSL_GetNumImplementedCiphers();
             unsigned maxOrder = sizeof(order) / sizeof(order[0]);
 
             /* TLS 1.3 suites first, in the NSS default order. */
@@ -1288,7 +1312,7 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
             if (((NswCipherSuiteOrderSetFn)orderApi)(
                     fd, order, (PRUint16)orderCount) != SECSuccess)
             {
-                SetLastErrorF("SSL_CipherSuiteOrderSet failed", PR_GetError());
+                nsw_set_last_error_f("SSL_CipherSuiteOrderSet failed", PR_GetError());
                 PR_Close(fd);
                 return NULL;
             }
@@ -1310,7 +1334,7 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
          * API since NSS 3.68; ignored when the linked NSS is older. */
         if (SSL_EnableTls13GreaseEch(fd, PR_TRUE) != SECSuccess)
         {
-            SetLastError("SSL_EnableTls13GreaseEch is not available");
+            nsw_set_last_error("SSL_EnableTls13GreaseEch is not available");
         }
         /* Firefox pads the GREASE ECH extension so it is 281 bytes long,
          * which also keeps the ClientHello past the 512-byte boundary
@@ -1369,7 +1393,7 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
                 if (SSL_SetNextProtoNego(
                         fd, reversed, (unsigned int)reversedLen) != SECSuccess)
                 {
-                    SetLastErrorF("SSL_SetNextProtoNego failed", PR_GetError());
+                    nsw_set_last_error_f("SSL_SetNextProtoNego failed", PR_GetError());
                     PR_Close(fd);
                     return NULL;
                 }
@@ -1403,7 +1427,7 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
         if (count > 0 &&
             SSL_SignatureSchemePrefSet(fd, schemes, count) != SECSuccess)
         {
-            SetLastErrorF("SSL_SignatureSchemePrefSet failed", PR_GetError());
+            nsw_set_last_error_f("SSL_SignatureSchemePrefSet failed", PR_GetError());
             PR_Close(fd);
             return NULL;
         }
@@ -1437,7 +1461,7 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
     /* SNI and the session cache key. */
     if (SSL_SetURL(fd, connection->hostname) != SECSuccess)
     {
-        SetLastErrorF("SSL_SetURL failed", PR_GetError());
+        nsw_set_last_error_f("SSL_SetURL failed", PR_GetError());
         PR_Close(fd);
         return NULL;
     }
@@ -1446,7 +1470,7 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
 
     if (SSL_ResetHandshake(fd, PR_FALSE) != SECSuccess)
     {
-        SetLastErrorF("SSL_ResetHandshake failed", PR_GetError());
+        nsw_set_last_error_f("SSL_ResetHandshake failed", PR_GetError());
         PR_Close(fd);
         return NULL;
     }
@@ -1458,7 +1482,7 @@ PMS_EXPORT int PMS_CALL pms_ssl_connect(void* connection_ptr)
 {
     if (!connection_ptr)
     {
-        SetLastError("Connection is null");
+        nsw_set_last_error("Connection is null");
         return PMS_SSL_ERROR;
     }
 
@@ -1477,7 +1501,7 @@ PMS_EXPORT int PMS_CALL pms_ssl_connect(void* connection_ptr)
     if (error == PR_END_OF_FILE_ERROR)
         return PMS_SSL_ZERO_RETURN;
 
-    SetLastErrorF("SSL_ForceHandshake failed", error);
+    nsw_set_last_error_f("SSL_ForceHandshake failed", error);
     return PMS_SSL_ERROR;
 }
 
@@ -1486,13 +1510,13 @@ PMS_EXPORT int PMS_CALL pms_ssl_feed_read(
 {
     if (!connection_ptr)
     {
-        SetLastError("Connection is null");
+        nsw_set_last_error("Connection is null");
         return PMS_SSL_ERROR;
     }
 
     if (!buffer && length > 0)
     {
-        SetLastError("Buffer is null");
+        nsw_set_last_error("Buffer is null");
         return PMS_SSL_ERROR;
     }
 
@@ -1506,7 +1530,7 @@ PMS_EXPORT int PMS_CALL pms_ssl_feed_read(
     if (!nsw_queue_reserve(&connection->read, (size_t)length))
     {
         PR_Unlock(connection->lock);
-        SetLastError("Out of memory");
+        nsw_set_last_error("Out of memory");
         return PMS_SSL_ERROR;
     }
 
@@ -1536,13 +1560,13 @@ PMS_EXPORT int PMS_CALL pms_ssl_take_write(
 {
     if (!connection_ptr)
     {
-        SetLastError("Connection is null");
+        nsw_set_last_error("Connection is null");
         return PMS_SSL_ERROR;
     }
 
     if (!buffer && length > 0)
     {
-        SetLastError("Buffer is null");
+        nsw_set_last_error("Buffer is null");
         return PMS_SSL_ERROR;
     }
 
@@ -1579,7 +1603,7 @@ PMS_EXPORT int PMS_CALL pms_ssl_pending_write(void* connection_ptr)
 {
     if (!connection_ptr)
     {
-        SetLastError("Connection is null");
+        nsw_set_last_error("Connection is null");
         return PMS_SSL_ERROR;
     }
 
@@ -1597,13 +1621,13 @@ PMS_EXPORT int PMS_CALL pms_ssl_read(
 {
     if (!connection_ptr)
     {
-        SetLastError("Connection is null");
+        nsw_set_last_error("Connection is null");
         return PMS_SSL_ERROR;
     }
 
     if (!buffer && length > 0)
     {
-        SetLastError("Buffer is null");
+        nsw_set_last_error("Buffer is null");
         return PMS_SSL_ERROR;
     }
 
@@ -1626,7 +1650,7 @@ PMS_EXPORT int PMS_CALL pms_ssl_read(
     if (error == PR_END_OF_FILE_ERROR)
         return PMS_SSL_ZERO_RETURN;
 
-    SetLastErrorF("PR_Recv failed", error);
+    nsw_set_last_error_f("PR_Recv failed", error);
     return PMS_SSL_ERROR;
 }
 
@@ -1635,13 +1659,13 @@ PMS_EXPORT int PMS_CALL pms_ssl_write(
 {
     if (!connection_ptr)
     {
-        SetLastError("Connection is null");
+        nsw_set_last_error("Connection is null");
         return PMS_SSL_ERROR;
     }
 
     if (!buffer && length > 0)
     {
-        SetLastError("Buffer is null");
+        nsw_set_last_error("Buffer is null");
         return PMS_SSL_ERROR;
     }
 
@@ -1661,7 +1685,7 @@ PMS_EXPORT int PMS_CALL pms_ssl_write(
     if (error == PR_WOULD_BLOCK_ERROR)
         return PMS_SSL_WANT_WRITE;
 
-    SetLastErrorF("PR_Send failed", error);
+    nsw_set_last_error_f("PR_Send failed", error);
     return PMS_SSL_ERROR;
 }
 
@@ -1778,7 +1802,7 @@ PMS_EXPORT int PMS_CALL pms_ssl_get_peer_certificate(
 {
     if (!connection_ptr)
     {
-        SetLastError("Connection is null");
+        nsw_set_last_error("Connection is null");
         return PMS_SSL_ERROR;
     }
 
@@ -1788,7 +1812,7 @@ PMS_EXPORT int PMS_CALL pms_ssl_get_peer_certificate(
 
     if (!cert)
     {
-        SetLastError("No peer certificate found");
+        nsw_set_last_error("No peer certificate found");
         return 0;
     }
 
@@ -1803,7 +1827,7 @@ PMS_EXPORT int PMS_CALL pms_ssl_get_peer_certificate(
 
     if (max_length < certLen)
     {
-        SetLastError("Buffer is too small for certificate");
+        nsw_set_last_error("Buffer is too small for certificate");
         CERT_DestroyCertificate(cert);
         return PMS_SSL_ERROR;
     }
