@@ -91,9 +91,9 @@ silently ignored:
 
 The library ships as a self-contained NuGet package: the managed assembly and
 the prebuilt native binary (`proxymap_nss`) travel together under
-`runtimes/{RID}/native/` (`win-x64`, `linux-x64`, `osx-arm64`), so NuGet picks
-the correct binary for the consumer's platform automatically — no manual
-copying.
+`runtimes/{RID}/native/` (`win-x64`, `linux-x64`, `linux-arm64`, `osx-arm64`),
+so NuGet picks the correct binary for the consumer's platform automatically —
+no manual copying.
 
 Unlike BoringSslStream, the native binary links **dynamically** against the
 system NSS/NSPR libraries (`libnss3`, `libssl3`, `libnspr4`, ...), the same
@@ -360,14 +360,15 @@ dotnet run --project NssConsole
 ```bash
 dotnet build NssStream.sln
 dotnet test  NssStream.Tests
-dotnet pack  NssStream/NssStream.csproj -c Release   # -> NssStream.1.0.0.nupkg
+dotnet pack  NssStream/NssStream.csproj -c Release   # -> NssStream.1.0.5.nupkg
 ```
 
 The native binaries are copied into the .NET output directories automatically
 during local builds, and embedded into the NuGet package under
-`runtimes/linux-x64/native/`, `runtimes/win-x64/native/` and
-`runtimes/osx-arm64/native/` when packing. On Apple Silicon no extra flags are
-needed; for Intel Macs override the RID at pack time:
+`runtimes/linux-x64/native/`, `runtimes/linux-arm64/native/`,
+`runtimes/win-x64/native/` and `runtimes/osx-arm64/native/` when packing. On
+Apple Silicon no extra flags are needed; for Intel Macs override the RID at
+pack time:
 
 ```bash
 dotnet pack NssStream/NssStream.csproj -c Release -p:MacNativeRuntimeIdentifier=osx-x64
