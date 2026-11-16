@@ -1032,6 +1032,8 @@ public sealed partial class NssStream : Stream
         _disposed = true;
         StopPump();
 
+        _connection.Dispose();
+
         if (disposing)
         {
             _readLock.Dispose();
@@ -1051,6 +1053,8 @@ public sealed partial class NssStream : Stream
 
         _disposed = true;
         StopPump();
+
+        _connection.Dispose();
 
         _readLock.Dispose();
         _writeLock.Dispose();
