@@ -1087,10 +1087,11 @@ public sealed partial class NssStream : Stream
             protected override bool ReleaseHandle() { Native.pms_ssl_free(handle); return true; }
         }
 
-        [LibraryImportAttribute(
+        [LibraryImport(
             "proxymap_nss",
             EntryPoint = "pms_ssl_create",
             StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial IntPtr pms_ssl_create(
             string hostname,
             string cipherList,
@@ -1104,82 +1105,94 @@ public sealed partial class NssStream : Stream
             int setOcspStatusType,
             int enableBrotli);
 
-        [LibraryImportAttribute(
+        [LibraryImport(
             "proxymap_nss",
             EntryPoint = "pms_ssl_connect")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial int pms_ssl_connect(
             SslHandle connection);
 
-        [LibraryImportAttribute(
+        [LibraryImport(
             "proxymap_nss",
             EntryPoint = "pms_ssl_feed_read")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial int pms_ssl_feed_read(
             SslHandle connection,
             IntPtr buffer,
             int length);
 
-        [LibraryImportAttribute(
+        [LibraryImport(
             "proxymap_nss",
             EntryPoint = "pms_ssl_take_write")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial int pms_ssl_take_write(
             SslHandle connection,
             IntPtr buffer,
             int length);
 
-        [LibraryImportAttribute(
+        [LibraryImport(
             "proxymap_nss",
             EntryPoint = "pms_ssl_pending_write")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial int pms_ssl_pending_write(
             SslHandle connection);
 
-        [LibraryImportAttribute(
+        [LibraryImport(
             "proxymap_nss",
             EntryPoint = "pms_ssl_read")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial int pms_ssl_read(
             SslHandle connection,
             IntPtr buffer,
             int length);
 
-        [LibraryImportAttribute(
+        [LibraryImport(
             "proxymap_nss",
             EntryPoint = "pms_ssl_write")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial int pms_ssl_write(
             SslHandle connection,
             IntPtr buffer,
             int length);
 
-        [LibraryImportAttribute(
+        [LibraryImport(
             "proxymap_nss",
             EntryPoint = "pms_ssl_get_protocol_version")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial IntPtr pms_ssl_get_protocol_version(
             SslHandle connection);
 
-        [LibraryImportAttribute(
+        [LibraryImport(
             "proxymap_nss",
             EntryPoint = "pms_ssl_get_cipher_name")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial IntPtr pms_ssl_get_cipher_name(
             SslHandle connection);
 
-        [LibraryImportAttribute(
+        [LibraryImport(
             "proxymap_nss",
             EntryPoint = "pms_ssl_get_alpn_selected")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial IntPtr pms_ssl_get_alpn_selected(
             SslHandle connection);
 
-        [LibraryImportAttribute(
+        [LibraryImport(
             "proxymap_nss",
             EntryPoint = "pms_ssl_get_last_error")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial IntPtr pms_ssl_get_last_error();
 
-        [LibraryImportAttribute(
+        [LibraryImport(
             "proxymap_nss",
             EntryPoint = "pms_ssl_free")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial void pms_ssl_free(
             IntPtr connection);
 
-        [LibraryImportAttribute(
+        [LibraryImport(
             "proxymap_nss",
             EntryPoint = "pms_ssl_get_peer_certificate")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial int pms_ssl_get_peer_certificate(
             SslHandle connection,
             IntPtr buffer,
