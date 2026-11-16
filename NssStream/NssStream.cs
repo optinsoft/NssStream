@@ -1224,7 +1224,11 @@ public sealed partial class NssStream : Stream
                 }
             }
 
+#if NET9_0_OR_GREATER
+            using var certificate = X509CertificateLoader.LoadCertificate(memory.Span);
+#else
             using var certificate = new X509Certificate2(memory.Span);
+#endif
 
             if (_sslValidationCallback is { } validate)
             {

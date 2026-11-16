@@ -614,7 +614,14 @@ public sealed class NssStreamTests
                 DateTimeOffset.UtcNow.AddMinutes(-5),
                 DateTimeOffset.UtcNow.AddHours(1));
 
+#if NET9_0_OR_GREATER
+        return X509CertificateLoader.LoadPkcs12(
+            certificate.Export(X509ContentType.Pfx), 
+            null, 
+            X509KeyStorageFlags.Exportable);
+#else
         return new X509Certificate2(
             certificate.Export(X509ContentType.Pfx));
+#endif
     }
 }
