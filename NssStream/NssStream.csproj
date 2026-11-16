@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -20,11 +20,6 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/optinsoft/NssStream.git</RepositoryUrl>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
-
-    <!-- RID used to package the macOS native library (osx-arm64 for Apple
-         Silicon by default). Override on the command line for Intel Macs:
-         dotnet pack -p:MacNativeRuntimeIdentifier=osx-x64 -->
-    <MacNativeRuntimeIdentifier Condition="'$(MacNativeRuntimeIdentifier)' == ''">osx-arm64</MacNativeRuntimeIdentifier>
   </PropertyGroup>
 
   <ItemGroup>
@@ -135,10 +130,12 @@
 	<_NativeFile Condition="'$(_NativeRid)' == 'win-x64'">proxymap_nss.dll</_NativeFile>
 	<_NativeFile Condition="$(_NativeRid.StartsWith('linux-'))">libproxymap_nss.so</_NativeFile>
 	<_NativeFile Condition="$(_NativeRid.StartsWith('osx-'))">libproxymap_nss.dylib</_NativeFile>
+    <_NativeDir Condition="'$(_NativeRid)' != '' AND Exists('../Native/build/$(_NativeRid)/$(_NativeFile)')">../Native/build/$(_NativeRid)</_NativeDir>
+	<_NativeDir Condition="'$(_NativeDir)' == '' AND '$(_NativeRid)' != '' AND Exists('../Native/build/$(_NativeRid)/Release/$(_NativeFile)')">../Native/build/$(_NativeRid)/Release</_NativeDir>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(_NativeRid)' != '' AND Exists('../Native/build/$(_NativeRid)/$(_NativeFile)')">
-		<None Include="../Native/build/$(_NativeRid)/$(_NativeFile)"
+  <ItemGroup Condition="'$(_NativeDir)' != ''">
+		<None Include="$(_NativeDir)/$(_NativeFile)"
 			  Link="$(_NativeFile)"
 			  CopyToOutputDirectory="PreserveNewest"
 			  Pack="false" />
