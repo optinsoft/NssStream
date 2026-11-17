@@ -79,36 +79,59 @@ static NSW_THREAD_LOCAL char g_last_error[NSW_ERROR_BUFFER_SIZE] = "";
 /* Optional raw-traffic debug dump: set NSSW_DEBUG=<path>. */
 static FILE* g_debug_file = NULL;
 static PRLock* g_debug_lock = NULL;
+static PRCallOnceType g_debug_init_once;
 
 static void nsw_debug_write(const char* direction, const uint8_t* data, size_t len)
 {
-    if (!g_debug_file)
+    FILE* file = g_debug_file;
+    PRLock* lock = g_debug_lock;
+
+    if (!file || !lock)
         return;
 
-    PR_Lock(g_debug_lock);
-    fprintf(g_debug_file, "%s %zu:\n", direction, len);
+    PR_Lock(lock);
+    fprintf(file, "%s %zu:\n", direction, len);
     for (size_t i = 0; i < len; ++i)
     {
-        fputc("0123456789abcdef"[(data[i] >> 4) & 0xF], g_debug_file);
-        fputc("0123456789abcdef"[data[i] & 0xF], g_debug_file);
+        fputc("0123456789abcdef"[(data[i] >> 4) & 0xF], file);
+        fputc("0123456789abcdef"[data[i] & 0xF], file);
         if ((i & 31) == 31)
-            fputc('\n', g_debug_file);
+            fputc('\n', file);
     }
-    fputc('\n', g_debug_file);
-    fflush(g_debug_file);
-    PR_Unlock(g_debug_lock);
+    fputc('\n', file);
+    fflush(file);
+    PR_Unlock(lock);
 }
 
-static void nsw_debug_init()
+static PRStatus PR_CALLBACK nsw_debug_init_once(void)
 {
     const char* path = PR_GetEnvSecure("NSSW_DEBUG");
 
-    if (!path || !path[0] || g_debug_file)
-        return;
+    if (!path || !path[0])
+        return PR_SUCCESS;
+    
+    PRLock* lock = PR_NewLock();
+    if (!lock)
+        return PR_SUCCESS;
 
-    g_debug_file = fopen(path, "w");
-    if (g_debug_file)
-        g_debug_lock = PR_NewLock();
+    FILE* file = fopen(path, "w");
+    if (!file)
+    {
+        PR_DestroyLock(lock);
+        return PR_SUCCESS;
+    }
+
+    /* Publish the lock first, the file last: nsw_debug_write() only
+     * proceeds when both are set. */
+    g_debug_lock = lock;
+    g_debug_file = file;
+
+    return PR_SUCCESS;
+}
+
+static void nsw_debug_init(void)
+{
+    PR_CallOnce(&g_debug_init_once, nsw_debug_init_once);
 }
 
 static void nsw_set_last_error(const char* message)
@@ -121,7 +144,11 @@ static void nsw_set_last_error_f(const char* fmt, int error)
 {
     char text[256] = "";
 
-    if (PR_GetErrorTextLength() > 0)
+    PRInt32 textLength = PR_GetErrorTextLength();
+
+    /* PR_GetErrorText copies textLength + 1 bytes (with the terminator)
+     * and has no size parameter, so only call it when it fits. */
+    if (textLength > 0 && (size_t)textLength < sizeof(text))
     {
         PR_GetErrorText(text);
     }
@@ -184,6 +211,9 @@ static PRStatus PR_CALLBACK nsw_init_layer_identity(void)
 
 static int nsw_queue_reserve(NswQueue* q, size_t extra)
 {
+    if (extra > SIZE_MAX - q->len)
+        return 0;
+
     /* The read queue compacts when fully consumed, the write queue is
      * drained by the pump, so cap + len stays bounded in practice. */
     if (q->len + extra <= q->cap)
@@ -191,7 +221,11 @@ static int nsw_queue_reserve(NswQueue* q, size_t extra)
 
     size_t newCap = q->cap ? q->cap : 4096;
     while (newCap < q->len + extra)
+    {
+        if (newCap > SIZE_MAX / 2)
+            return 0;
         newCap *= 2;
+    }
 
     uint8_t* newData = (uint8_t*)realloc(q->data, newCap);
     if (!newData)
@@ -1184,7 +1218,6 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
         const char* cursor = cipher_list;
         char token[128];
         size_t tokenLen;
-        PRBool unknown = PR_FALSE;
 
         while (nsw_next_token(&cursor, ':', token, sizeof(token), &tokenLen) &&
                requestedCount < sizeof(requested) / sizeof(requested[0]))
@@ -1214,9 +1247,6 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
                     ++matched;
                 }
             }
-
-            if (matched == 0)
-                unknown = PR_TRUE;
         }
 
         if (requestedCount == 0)
@@ -1317,8 +1347,6 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
                 return NULL;
             }
         }
-
-        (void)unknown;
     }
 
     if (enable_grease)
@@ -1354,6 +1382,12 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
 
         while (nsw_next_token(&cursor, ':', token, sizeof(token), &tokenLen))
         {
+            if (wireLen + 1 + tokenLen > sizeof(wire))
+            {
+                nsw_set_last_error("ALPN protocol list is too long");
+                PR_Close(fd);
+                return NULL;
+            }
             wire[wireLen++] = (uint8_t)tokenLen;
             memcpy(wire + wireLen, token, tokenLen);
             wireLen += tokenLen;
@@ -1361,26 +1395,26 @@ PMS_EXPORT void* PMS_CALL pms_ssl_create(
 
         if (wireLen > 0)
         {
-            /* NSS stores the list for NPN, where the *fallback* protocol
-             * must come first, and therefore moves the first entry to the
-             * end of the advertised ALPN list. Feed the protocols in
-             * reverse order so the advertised ALPN list matches the
-             * preference order given by the caller. */
-            size_t entryOffset[256];
+            size_t entryOffset[1024];   /* an entry takes at least 2 bytes */
             size_t entryCount = 0;
             size_t offset = 0;
-            uint8_t reversed[2048];
-            size_t reversedLen = 0;
 
-            while (offset < wireLen &&
-                   entryCount < sizeof(entryOffset) / sizeof(entryOffset[0]))
+            while (offset < wireLen)
             {
                 entryOffset[entryCount++] = offset;
                 offset += (size_t)wire[offset] + 1;
             }
 
-            if (offset == wireLen)
+            if (entryCount > 0)
             {
+                /* NSS stores the list for NPN, where the *fallback* protocol
+                 * must come first, and therefore moves the first entry to the
+                 * end of the advertised ALPN list. Feed the protocols in
+                 * reverse order so the advertised ALPN list matches the
+                 * preference order given by the caller. */
+                uint8_t reversed[2048];
+                size_t reversedLen = 0;
+
                 for (size_t i = entryCount; i > 0; --i)
                 {
                     size_t off = entryOffset[i - 1];
@@ -1520,6 +1554,12 @@ PMS_EXPORT int PMS_CALL pms_ssl_feed_read(
         return PMS_SSL_ERROR;
     }
 
+    if (length < 0)
+    {
+        nsw_set_last_error("Invalid length");
+        return PMS_SSL_ERROR;
+    }
+
     if (length == 0)
         return 0;
 
@@ -1567,6 +1607,12 @@ PMS_EXPORT int PMS_CALL pms_ssl_take_write(
     if (!buffer && length > 0)
     {
         nsw_set_last_error("Buffer is null");
+        return PMS_SSL_ERROR;
+    }
+
+    if (length < 0)
+    {
+        nsw_set_last_error("Invalid length");
         return PMS_SSL_ERROR;
     }
 
@@ -1625,7 +1671,13 @@ PMS_EXPORT int PMS_CALL pms_ssl_read(
         return PMS_SSL_ERROR;
     }
 
-    if (!buffer && length > 0)
+    if (length <= 0)
+    {
+        nsw_set_last_error("Invalid length");
+        return PMS_SSL_ERROR;
+    }
+
+    if (!buffer)
     {
         nsw_set_last_error("Buffer is null");
         return PMS_SSL_ERROR;
@@ -1663,7 +1715,13 @@ PMS_EXPORT int PMS_CALL pms_ssl_write(
         return PMS_SSL_ERROR;
     }
 
-    if (!buffer && length > 0)
+    if (length <= 0)
+    {
+        nsw_set_last_error("Invalid length");
+        return PMS_SSL_ERROR;
+    }
+
+    if (!buffer)
     {
         nsw_set_last_error("Buffer is null");
         return PMS_SSL_ERROR;
