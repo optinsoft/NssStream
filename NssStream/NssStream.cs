@@ -202,6 +202,8 @@ public sealed partial class NssStream : Stream
 
     private void ApplyClientOptions(SslClientAuthenticationOptions options)
     {
+        ThrowIfDisposed();
+
         if (_pumpTask is not null || _authenticated)
         {
             throw new InvalidOperationException(
@@ -704,7 +706,7 @@ public sealed partial class NssStream : Stream
         }
         catch (ObjectDisposedException) when (_disposed)
         {
-            // // Dispose closed the native handle
+            // Dispose closed the native handle
         }
         catch (Exception ex)
         {
@@ -769,8 +771,9 @@ public sealed partial class NssStream : Stream
                     .ConfigureAwait(false);
             }
         }
-        finally { 
-            ArrayPool<byte>.Shared.Return(buffer); 
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
         }
     }
 
@@ -1086,14 +1089,14 @@ public sealed partial class NssStream : Stream
             StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial IntPtr pms_ssl_create(
-            string hostname,
-            string cipherList,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string hostname,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string cipherList,
             int enableGrease,
             int enableEchGrease,
-            string alpnProtos,
-            string alpsProtos,
-            string trustAnchors,
-            string sigAlgs,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string alpnProtos,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string alpsProtos,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string trustAnchors,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string sigAlgs,
             int enableSignedCertTimestamps,
             int setOcspStatusType,
             int enableBrotli);
