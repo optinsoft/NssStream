@@ -58,7 +58,7 @@ public sealed partial class NssStream : Stream
     private readonly int _enableGrease;
     private readonly int _enableEchGrease;
     private string _alpnProtos;
-    private readonly string _alpsProtos;
+    private string _alpsProtos;
     private readonly string _trustAnchors;
     private readonly string _sigAlgs;
     private readonly int _enableSignedCertTimestamps;
@@ -241,10 +241,18 @@ public sealed partial class NssStream : Stream
             _hostname = options.TargetHost;
         }
 
-        if (options.ApplicationProtocols is { Count: > 0 } applicationProtocols)
-        {
-            _alpnProtos = string.Join(":", applicationProtocols.Select(p => Encoding.UTF8.GetString(p.Protocol.Span)));
-        }
+        // Same semantics as SslStream: once options are applied, they fully define ALPN.
+        // null / empty ApplicationProtocols means "do not send the ALPN extension at all"
+        // (the Chrome/Firefox preset is used only when no options are applied).
+        var alpnList = options.ApplicationProtocols is { Count: > 0 } applicationProtocols
+            ? applicationProtocols.Select(p => Encoding.UTF8.GetString(p.Protocol.Span)).ToList()
+            : new List<string>();
+        _alpnProtos = string.Join(":", alpnList);
+
+        // ALPS settings only make sense for protocols that are actually offered via ALPN.
+        _alpsProtos = string.Join(":", _alpsProtos
+            .Split(':', StringSplitOptions.RemoveEmptyEntries)
+            .Where(alpnList.Contains));
 
         _sslValidationCallback = options.RemoteCertificateValidationCallback;
         _revocationMode = NormalizeRevocationMode(options.CertificateRevocationCheckMode);
